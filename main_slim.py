@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import time
 import pandas as pd
-
+from collections import defaultdict
 import logging
 import sys
 import os
@@ -27,7 +27,8 @@ train_list = []
 node_list = {}  # 先用车站做key，再用t做key索引到node
 start_time = time.time()
 sec_times_all = {}
-multiplier = {"y_v": {}, "z_jv": {}}
+multiplier = {}  # each (station, t)
+yv2xa_map = defaultdict(lambda: defaultdict(int))  # (s,t) node -> (s', t', s, t) arc : value
 
 
 def read_station(path, size):
@@ -89,6 +90,7 @@ def init_nodes():
         for t in range(0, time_span):  # 循环时刻t
             node = Node(sta, t)
             node_list[sta][t] = node
+            multiplier[(sta, t)] = 0.0
     # sink node
     node_list['_t'] = {}
     node_list['_t'][-1] = Node('_t', -1)
@@ -202,125 +204,13 @@ param:
 
 
 def label_correcting_shortest_path(summary_interval, org, des, train):
-    '''
-    get the shortest path for the specific train
-    :param summary_interval:
-    :param org: source node name [sta, t]
-    :param des: sink node name [sta, t]
-    :param train: train to generate train time space network
-    :return:
-    '''
-    # initialize Queue
-    # c_time = time.time()
-    Queue = collections.deque()
-    SE_list = []
-    summary_interval = summary_interval
-    # create initial label
-    label = Label()
-    label.node_passed = [org]
-    Queue.append(label)  # add initial label into Queue, Queue存储各个label，各个label含各自的路径信息
-    Paths = []  # all complete paths
-    cnt = 0
-    cnt2 = 0
-    # main loop of the algorithm
-    while len(Queue) > 0:
-        current_path = Queue.pop()  # 当前的label
-        # extend the label
-        last_node_name = current_path.node_passed[-1]
-        last_node = node_list[last_node_name[0]][last_node_name[1]]  # 当前点
-        if train.traNo in last_node.out_arcs.keys():  # 该节点有该列车的流出弧的话，才进行后续节点的加入
-            for out_arc in last_node.out_arcs[train.traNo].values():  # 遍历当前点的流出弧，找到下一节点
-                child_node = node_list[out_arc.staBelong_next][out_arc.timeBelong_next].name
-                cnt2 += 1
-                extended_path = copy.deepcopy(current_path)  # 新label
-                extended_path.node_passed.append(child_node)
-                extended_path.cost += out_arc.arc_length
-                for occupy_node in out_arc.node_occupied:
-                    extended_path.cost += occupy_node.multiplier
-
-                Queue.append(extended_path)
-
-        if current_path.node_passed[-1][0] == des[0]:  # 注意不能直接path[-1] == des，引用类型相同是判断地址相同
-            Paths.append(current_path)
-
-    # choose optimal solution
-    opt_path = None
-    min_cost = 10000000
-    for path in Paths:
-        if path.cost < min_cost:
-            min_cost = path.cost
-            opt_path = path
-    path_cost = opt_path.cost
-    # a_time = time.time()
-    # print(a_time - c_time)
-    return opt_path, path_cost
+    pass
+    # todo
 
 
 def label_correcting_shortest_path_with_forbidden(summary_interval, org, des, train):
-    '''
-    get the shortest path for the specific train with the remained subgraph
-    :param summary_interval:
-    :param org: source node name [sta, t]
-    :param des: sink node name [sta, t]
-    :param train: train to generate train time space network
-    :return:
-    '''
-    # initialize Queue
-    # c_time = time.time()
-    Queue = collections.deque()
-    SE_list = []
-    summary_interval = summary_interval
-    # create initial label
-    label = Label()
-    label.node_passed = [org]
-    Queue.append(label)  # add initial label into Queue, Queue存储各个label，各个label含各自的路径信息
-    Paths = []  # all complete paths
-    cnt = 0
-    cnt2 = 0
-    # main loop of the algorithm
-    while len(Queue) > 0:
-        current_path = Queue.pop()  # 当前的label
-        # extend the label
-        last_node_name = current_path.node_passed[-1]
-        last_node = node_list[last_node_name[0]][last_node_name[1]]  # 当前点
-
-        if train.traNo in last_node.out_arcs.keys():  # 该节点有该列车的流出弧的话，才进行后续节点的加入
-            for out_arc in last_node.out_arcs[train.traNo].values():  # 遍历当前点的流出弧，找到下一节点
-                if node_list[out_arc.staBelong_next][out_arc.timeBelong_next].isOccupied:  # 若下一节点已经被占用
-                    continue
-                child_node = node_list[out_arc.staBelong_next][out_arc.timeBelong_next].name
-                cnt2 += 1
-                extended_path = copy.deepcopy(current_path)  # 新label
-                extended_path.node_passed.append(child_node)
-                extended_path.cost += out_arc.arc_length
-                for occupy_node in out_arc.node_occupied:
-                    extended_path.cost += occupy_node.multiplier
-
-                # if child_node in SE_list:
-                #     Queue.appendleft(extended_path)
-                # else:
-                #     SE_list.append(child_node)
-                #     Queue.append(extended_path)
-                Queue.append(extended_path)
-
-                # if cnt2 % summary_interval == 0:
-                #     print('extended_path:', extended_path.__repr__())
-
-        if current_path.node_passed[-1][0] == des[0]:  # 注意不能直接path[-1] == des，引用类型相同是判断地址相同
-            Paths.append(current_path)
-
-    # choose optimal solution
-    opt_path = None
-    min_cost = 10000000
-    for path in Paths:
-        if path.cost < min_cost:
-            min_cost = path.cost
-            opt_path = path
-    path_cost = opt_path.node_passed[-2][1] - opt_path.node_passed[1][1]
-
-    # a_time = time.time()
-    # print(a_time - c_time)
-    return opt_path, path_cost
+    pass
+    # todo
 
 
 def update_lagrangian_multipliers(alpha):

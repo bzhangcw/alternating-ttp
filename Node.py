@@ -18,6 +18,7 @@ class Node():
         return "Node: sta_" + str(self.sta_located) + ";" + "t_" + str(self.t_located)
 
     def associate_with_incoming_arcs(self, train):
+        global yv2xa_map
         '''
         associate node with train arcs, add incoming arcs to nodes
         :param train:
@@ -46,6 +47,7 @@ class Node():
                         train.subgraph.add_edge((arc_var.staBelong_pre, arc_var.timeBelong_pre),
                                                 (arc_var.staBelong_next, arc_var.timeBelong_next),
                                                 weight=arc_var.arc_length)
+                        yv2xa_map[(arc_var.staBelong_next, arc_var.timeBelong_next)][(arc_var.staBelong_pre, arc_var.timeBelong_pre, arc_var.staBelong_next, arc_var.timeBelong_next)] += 1
 
     def associate_with_outgoing_arcs(self, train):
         '''
