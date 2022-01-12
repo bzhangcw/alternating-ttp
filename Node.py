@@ -1,4 +1,12 @@
-# 节点类，储存流入与流出该节点的弧集
+from collections import defaultdict
+from util import *
+
+###########
+# todo
+# a few parameters to be fixed
+###########
+eps = 5
+
 
 class Node():
     def __init__(self, sta, t):
@@ -9,13 +17,31 @@ class Node():
         self.incompatible_arcs = []  # 该节点对应资源占用<=1的约束中，不相容弧的集合，以trainNo为索引，子字典以arc_length为key
         self.multiplier = 0  # 该节点对应约束的拉格朗日乘子
         self.name = [self.sta_located, self.t_located]
-        self.isOccupied = False # 可行解中，该节点是否已经被占据
-
-    def __repr__(self):
-        return "Node: " + str(self.sta_located) + " at time " + str(self.t_located)
+        self.isOccupied = False  # 可行解中，该节点是否已经被占据
+        self.build_precedence_map(epsilon=eps)
+        self._str = self.__str__()
+        self.is_sink = sta == NODE_SINK_ARR
 
     def __str__(self):
-        return "Node: sta_" + str(self.sta_located) + ";" + "t_" + str(self.t_located)
+        return f"node:{self.sta_located}@{self.t_located}"
+
+    def __repr__(self):
+        return self._str
+
+    def __hash__(self):
+        return self._str.__hash__()
+
+    def build_precedence_map(self, epsilon):
+        """
+        let self be w
+        create a list of nodes that precede the current node:
+            i.e., v <= w
+        and w.t - v.t <= epsilon
+        """
+        node_prec_map[self.sta_located, self.t_located] = [
+            (self.sta_located, t) for t in
+            range(self.t_located - 1, self.t_located - epsilon - 1, -1)
+        ]
 
     def associate_with_incoming_arcs(self, train):
         global yv2xa_map
@@ -39,7 +65,7 @@ class Node():
             for start_t in cur_arcs.keys():
                 arcs_from_start_t = cur_arcs[start_t]  # 从上一节点在start_t伸出来的arc，包括区间的一个arc和停站弧的若干个arc
                 for arc_length, arc_var in arcs_from_start_t.items():
-                    if arc_length + start_t == t_node:  # 若该弧流入该节点
+                    if arc_length + start_t == t_node or self.is_sink:  # 若该弧流入该节点
                         # 若不包含该车的弧列表，则先生成弧列表
                         if train.traNo not in self.in_arcs.keys():
                             self.in_arcs[train.traNo] = {}
@@ -47,7 +73,11 @@ class Node():
                         train.subgraph.add_edge((arc_var.staBelong_pre, arc_var.timeBelong_pre),
                                                 (arc_var.staBelong_next, arc_var.timeBelong_next),
                                                 weight=arc_var.arc_length)
-                        yv2xa_map[(arc_var.staBelong_next, arc_var.timeBelong_next)][(arc_var.staBelong_pre, arc_var.timeBelong_pre, arc_var.staBelong_next, arc_var.timeBelong_next)] += 1
+                        yv2xa_map[(arc_var.staBelong_next, arc_var.timeBelong_next)][(
+                            arc_var.staBelong_pre, arc_var.timeBelong_pre, arc_var.staBelong_next,
+                            arc_var.timeBelong_next)] += 1
+                        xa_map[arc_var.staBelong_pre, arc_var.timeBelong_pre, arc_var.staBelong_next,
+                               arc_var.timeBelong_next] += 1
 
     def associate_with_outgoing_arcs(self, train):
         '''
@@ -56,7 +86,7 @@ class Node():
         :return:
         '''
         sta_node = self.sta_located
-        t_node = self.t_located # 所在点
+        t_node = self.t_located  # 所在点
 
         if sta_node not in train.v_staList or sta_node == train.v_staList[-1]:  # 列车径路不包含该站 或 该站为最后一站，则都不会有流出弧
             return -1
@@ -73,4 +103,3 @@ class Node():
                 train.subgraph.add_edge((arc_var.staBelong_pre, arc_var.timeBelong_pre),
                                         (arc_var.staBelong_next, arc_var.timeBelong_next),
                                         weight=arc_var.arc_length)
-

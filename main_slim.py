@@ -1,5 +1,8 @@
 import collections
 import re
+from typing import *
+import networkx as nx
+
 from Train import *
 from Node import *
 import copy
@@ -23,12 +26,10 @@ station_list = []  # 实际车站列表
 v_station_list = []  # 时空网车站列表，车站一分为二 # 源节点s, 终结点t
 sec_times = {}  # total miles for stations
 miles = []
-train_list = []
+train_list: List[Train] = []
 node_list = {}  # 先用车站做key，再用t做key索引到node
 start_time = time.time()
 sec_times_all = {}
-multiplier = {}  # each (station, t)
-yv2xa_map = defaultdict(lambda: defaultdict(int))  # (s,t) node -> (s', t', s, t) arc : value
 
 
 def read_station(path, size):
@@ -174,7 +175,7 @@ def associate_arcs_nodes_by_resource_occupation():
 def get_train_timetable_from_result():
     for train in train_list:
         print("===============Tra_" + train.traNo + "======================")
-        for node in train.feasible_path.node_passed:
+        for node in train.feasible_path:
             train.timetable[node[0]] = node[1]
 
 
@@ -193,19 +194,24 @@ class Label(object):
         return temp
 
 
-'''
-labelling_SPPRC: apply labelling correction algorithm to solve SPPRC(shortest path problem with resource constraint)
-param:
-    Graph: network object
-    org: string, source node
-    des: string destination node
-    rmp_pi: dict, the dual price of each constraint in RMP
-'''
-
-
-def label_correcting_shortest_path(summary_interval, org, des, train):
-    pass
+def shortest_path(train, option='dual'):
+    """
+    """
+    i, j = train.source, train.sink
+    _g = train.subgraph if option == 'dual' else train.subgraph_primal
+    try:
+        ssp = nx.shortest_path(_g, i, j, weight='price', method='bellman-ford')
+        cost = nx.path_weight(_g, ssp, weight='price')
+    except Exception as e:
+        # infeasible and unconnected case.
+        # you are unable to create a shortest path.
+        logger.exception(e)
+        ssp = []
+        cost = np.inf
     # todo
+    # compute cost
+
+    return ssp, cost
 
 
 def label_correcting_shortest_path_with_forbidden(summary_interval, org, des, train):
@@ -228,30 +234,22 @@ def update_lagrangian_multipliers(alpha):
     return total_cost
 
 
-def set_node_occupation(train):
-    for node_id in range(1, len(train.feasible_path.node_passed) - 2):
-        node = train.feasible_path.node_passed[node_id]
-        next_node = train.feasible_path.node_passed[node_id + 1]
-        for node in train.arcs[node[0], next_node[0]][node[1]][next_node[1] - node[1]].node_occupied:
-            node.isOccupied = True
-    train.last_feasible_path = copy.deepcopy(train.feasible_path)
-
-
-def clear_node_occupation():
-    for train in train_list:
-        if train.last_feasible_path is not None:
-            for node_id in range(1, len(train.last_feasible_path.node_passed) - 2):
-                node = train.last_feasible_path.node_passed[node_id]
-                next_node = train.last_feasible_path.node_passed[node_id + 1]
-                for node in train.arcs[node[0], next_node[0]][node[1]][next_node[1] - node[1]].node_occupied:
-                    node.isOccupied = False
+def update_yv_multiplier():
+    """
+    multiplier for each node (v)
+    """
+    for (station, t), predecessors in node_prec_map.items():
+        yv_multiplier[station, t] = sum(
+            multiplier[p] for p in predecessors
+        )
+    logger.info("multiplier for 'v (nodes)' updated")
 
 
 if __name__ == '__main__':
 
-    station_size = int(os.environ.get('station_size', 30))
+    station_size = int(os.environ.get('station_size', 10))
     train_size = int(os.environ.get('train_size', 5))
-    time_span = int(os.environ.get('time_span', 500))
+    time_span = int(os.environ.get('time_span', 150))
     logger.info(f"size: #train,#station,#timespan: {train_size, station_size, time_span}")
     read_station('raw_data/1-station.xlsx', station_size)
     read_section('raw_data/3-section-time.xlsx')
@@ -281,26 +279,34 @@ if __name__ == '__main__':
     iter = 0
     interval = 10
     while gap > minGap:
+        # compile adjusted multiplier for each node
+        #   from the original Lagrangian
+        update_yv_multiplier()
         # LR: train sub-problems solving
         path_cost_LR = 0
         for train in train_list:
-            train.opt_path_LR, train.opt_cost_LR = label_correcting_shortest_path(20, node_list['s_'][-1].name,
-                                                                                  node_list['_t'][-1].name, train)
+            train.update_arc_multiplier()
+            train.opt_path_LR, train.opt_cost_LR = shortest_path(
+                train
+            )
             train.update_arc_chosen()  # LR中的arc_chosen，用于更新乘子
             path_cost_LR += train.opt_cost_LR
-
+        logger.info("dual subproblems finished")
         # feasible solutions
         path_cost_feasible = 0
-        for train in train_list:
-            train.feasible_path, train.feasible_cost = label_correcting_shortest_path_with_forbidden(20,
-                                                                                                     node_list['s_'][
-                                                                                                         -1].name,
-                                                                                                     node_list['_t'][
-                                                                                                         -1].name,
-                                                                                                     train)
-            set_node_occupation(train)  # 可行解不需要arc_chosen，用opt_path即可
+        # todo, 他这里不对，不应该排序么
+        occupied_nodes = set()
+        for idx, train in enumerate(train_list):
+            train.update_primal_graph(occupied_nodes)
+            train.feasible_path, train.feasible_cost = shortest_path(
+                train, option='primal'
+            )
+            if train.feasible_cost == np.inf:
+                logger.info(f"maximum cardinality of feasible paths: {idx}")
+                break
+            occupied_nodes.update(train.feasible_path[1:-1])
             path_cost_feasible += train.feasible_cost
-        clear_node_occupation()  # 清除不能在循环内，会将同一轮次的上一列车的占用给清空了
+
         UB.append(path_cost_feasible)
 
         # update lagrangian multipliers
@@ -376,14 +382,12 @@ if __name__ == '__main__':
 
     ## plot the bound updates
     font_dic = {
-                "family": "Times",
-                "style": "oblique",
-                "weight": "normal",
-                "color": "green",
-                "size": 20
-                }
-
-
+        "family": "Times",
+        "style": "oblique",
+        "weight": "normal",
+        "color": "green",
+        "size": 20
+    }
 
     x_cor = range(1, len(LB) + 1)
     plt.plot(x_cor, LB, label='LB')

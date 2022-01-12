@@ -1,5 +1,5 @@
 ## 弧集合
-class Arc():
+class Arc(object):
     def __init__(self, trainBelong, staBelong_preSta, staBelong_next, timeBelong_pre, timeBelong_next, arc_length):
         self.trainBelong = trainBelong
         self.staBelong_pre = staBelong_preSta
@@ -17,5 +17,4 @@ class Arc():
     def __repr__(self):
         pre_t = str(self.timeBelong_pre)
         next_t = str(self.timeBelong_next)
-        return self.trainBelong + ": " + self.staBelong_pre + "(" + pre_t + ") => " + self.staBelong_next + "(" + next_t \
-               + ")"
+        return f"{self.staBelong_pre, pre_t, self.staBelong_next, next_t}:{self.trainBelong}"
