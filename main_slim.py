@@ -91,7 +91,8 @@ def init_nodes():
         for t in range(0, time_span):  # 循环时刻t
             node = Node(sta, t)
             node_list[sta][t] = node
-            multiplier[(sta, t)] = 0.0
+            if "s" not in sta and "t" not in sta:
+                multiplier[(sta, t)] = 0.0
     # sink node
     node_list['_t'] = {}
     node_list['_t'][-1] = Node('_t', -1)
@@ -180,19 +181,9 @@ def get_train_timetable_from_result():
             train.timetable[node[0]] = node[1]
 
 
-def update_lagrangian_multipliers(alpha):
-    total_cost = 0
-    for sta in v_station_list:
-        if sta == v_station_list[0] or sta == v_station_list[-1]:  # s_和_t并没有乘子
-            continue
-        for node in node_list[sta].values():  # 这个站的各个t的node
-            temp = 0
-            for arc in node.incompatible_arcs:
-                temp += arc.isChosen_LR
-
-            node.multiplier = max(0, node.multiplier + alpha * (temp - 1))  # 1为node capacity
-            total_cost += node.multiplier
-    return total_cost
+def update_lagrangian_multipliers(alpha, subgradient_dict):
+    for node in multiplier.keys():
+            multiplier[node] += alpha * max(subgradient_dict[node], 0)
 
 
 def update_yv_multiplier():
@@ -206,11 +197,16 @@ def update_yv_multiplier():
     logger.info("multiplier for 'v (nodes)' updated")
 
 
+def update_subgradient_dict(subgradient_dict, opt_path_LR):
+    for node in opt_path_LR[1:-1]:  # z_{j v}
+        subgradient_dict[node] += 1
+
+
 if __name__ == '__main__':
 
-    station_size = int(os.environ.get('station_size', 10))
-    train_size = int(os.environ.get('train_size', 5))
-    time_span = int(os.environ.get('time_span', 150))
+    station_size = int(os.environ.get('station_size', 5))
+    train_size = int(os.environ.get('train_size', 100))
+    time_span = int(os.environ.get('time_span', 100))
     logger.info(f"size: #train,#station,#timespan: {train_size, station_size, time_span}")
     read_station('raw_data/1-station.xlsx', station_size)
     read_section('raw_data/3-section-time.xlsx')
@@ -238,35 +234,41 @@ if __name__ == '__main__':
     gap = 100
     alpha = 0
     iter = 0
-    interval = 10
-    while gap > minGap:
+    iter_max = 1000
+    interval = 1
+    while gap > minGap and iter < iter_max:
         # compile adjusted multiplier for each node
         #   from the original Lagrangian
         update_yv_multiplier()
         # LR: train sub-problems solving
         path_cost_LR = 0
+        subgradient_dict = defaultdict(lambda: -1)
         for train in train_list:
             train.update_arc_multiplier()
-            train.opt_path_LR, train.opt_cost_LR = train.shortest_path(
-
-            )
+            train.opt_path_LR, train.opt_cost_LR = train.shortest_path()
             train.update_arc_chosen()  # LR中的arc_chosen，用于更新乘子
             path_cost_LR += train.opt_cost_LR
+            update_subgradient_dict(subgradient_dict, train.opt_path_LR)
         logger.info("dual subproblems finished")
+
         # feasible solutions
         path_cost_feasible = 0
         # todo, 他这里不对，不应该排序么
         occupied_nodes = set()
+        count = 0
         for idx, train in enumerate(train_list):
             train.update_primal_graph(occupied_nodes)
 
             train.feasible_path, train.feasible_cost = train.shortest_path_primal()
 
             if train.feasible_cost == np.inf:
-                logger.info(f"maximum cardinality of feasible paths: {idx}")
-                break
+                path_cost_feasible += max(d['weight']for i, j, d in train.subgraph.edges(data=True)) * len(train.v_staList)
+                continue
+            else:
+                count += 1
             occupied_nodes.update(train.feasible_path[1:-1])
             path_cost_feasible += train.feasible_cost
+        logger.info(f"maximum cardinality of feasible paths: {count}")
 
         UB.append(path_cost_feasible)
 
@@ -275,8 +277,8 @@ if __name__ == '__main__':
             alpha = 0.5 / (iter + 1)
         else:
             alpha = 0.5 / 20
-        multiplier_cost = update_lagrangian_multipliers(alpha)
-        LB.append(path_cost_LR - multiplier_cost)
+        update_lagrangian_multipliers(alpha, subgradient_dict)
+        LB.append(path_cost_LR)
 
         iter += 1
         gap = (UB[-1] - LB[-1]) / LB[-1]
@@ -284,6 +286,7 @@ if __name__ == '__main__':
         if iter % interval == 0:
             print("==================  iteration " + str(iter) + " ==================")
             print("                 current gap: " + str(round(gap * 100, 5)) + "% \n")
+            print(f"UB: {path_cost_feasible}; LB: {path_cost_LR}")
 
     get_train_timetable_from_result()
     print("================== solution found ==================")

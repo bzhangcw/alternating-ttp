@@ -199,6 +199,8 @@ class Train(object):
             right_bound_sink = right_bound_by_sink[self.v_staList.index(sta) - 1]
             self.right_time_bound[sta] = min(right_bound_dep, right_bound_sink)
 
+        assert all([bound >= 0 for bound in self.right_time_bound.values()])
+
     def update_arc_multiplier(self):
         """
         rebuild current price/multiplier to cal shortest path
@@ -227,7 +229,8 @@ class Train(object):
         except Exception as e:
             # infeasible and unconnected case.
             # you are unable to create a shortest path.
-            self.logger.warning(f"unable to compute for {self.traNo}")
+            # self.logger.warning(e)
+            self.logger.warning(f"unable to compute for {self.traNo}:{option}")
             ssp = []
             cost = np.inf
         # todo

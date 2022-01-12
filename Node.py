@@ -40,7 +40,7 @@ class Node():
         """
         node_prec_map[self.sta_located, self.t_located] = [
             (self.sta_located, t) for t in
-            range(self.t_located - 1, self.t_located - epsilon - 1, -1)
+            range(self.t_located - 1, max(self.t_located - epsilon - 1, 0), -1)
         ]
 
     def associate_with_incoming_arcs(self, train):
@@ -72,7 +72,7 @@ class Node():
                         self.in_arcs[train.traNo][arc_length] = arc_var
                         train.subgraph.add_edge((arc_var.staBelong_pre, arc_var.timeBelong_pre),
                                                 (arc_var.staBelong_next, arc_var.timeBelong_next),
-                                                weight=arc_var.arc_length)
+                                                weight=arc_length)
                         yv2xa_map[(arc_var.staBelong_next, arc_var.timeBelong_next)][(
                             arc_var.staBelong_pre, arc_var.timeBelong_pre, arc_var.staBelong_next,
                             arc_var.timeBelong_next)] += 1
@@ -102,4 +102,4 @@ class Node():
                 self.out_arcs[train.traNo][arc_length] = arc_var
                 train.subgraph.add_edge((arc_var.staBelong_pre, arc_var.timeBelong_pre),
                                         (arc_var.staBelong_next, arc_var.timeBelong_next),
-                                        weight=arc_var.arc_length)
+                                        weight=arc_length)
