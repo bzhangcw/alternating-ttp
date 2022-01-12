@@ -234,7 +234,7 @@ if __name__ == '__main__':
     gap = 100
     alpha = 0
     iter = 0
-    iter_max = 1000
+    iter_max = 100
     interval = 1
     while gap > minGap and iter < iter_max:
         # compile adjusted multiplier for each node
