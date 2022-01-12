@@ -240,6 +240,8 @@ if __name__ == '__main__':
         # compile adjusted multiplier for each node
         #   from the original Lagrangian
         update_yv_multiplier()
+        nonzeros_xa = {k: v for k, v in xa_map.items() if v > 0}
+        nonzeros = {k: v for k, v in yv_multiplier.items() if v > 0}
         # LR: train sub-problems solving
         path_cost_LR = 0
         subgradient_dict = defaultdict(lambda: -1)
@@ -281,7 +283,7 @@ if __name__ == '__main__':
         LB.append(path_cost_LR)
 
         iter += 1
-        gap = (UB[-1] - LB[-1]) / LB[-1]
+        gap = (UB[-1] - LB[-1]) / abs(LB[-1])
 
         if iter % interval == 0:
             print("==================  iteration " + str(iter) + " ==================")
