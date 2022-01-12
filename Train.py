@@ -207,7 +207,7 @@ class Train(object):
         """
         subg = self.subgraph
         price = {}
-        price = [(i, j, {'price': v['weight'] - xa_map[i, j] * yv_multiplier[j]}) for i, j, v in subg.edges(data=True)]
+        price = [(i, j, {'price': v['weight'] + xa_map[i, j] * yv_multiplier[j]}) for i, j, v in subg.edges(data=True)]
         subg.update(edges=price)
 
     def update_primal_graph(self, occupied_nodes, *args, **kwargs):

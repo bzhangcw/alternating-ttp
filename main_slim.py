@@ -236,6 +236,7 @@ if __name__ == '__main__':
     iter = 0
     iter_max = 100
     interval = 1
+    interval_primal = 1
     while gap > minGap and iter < iter_max:
         # compile adjusted multiplier for each node
         #   from the original Lagrangian
@@ -253,24 +254,28 @@ if __name__ == '__main__':
             update_subgradient_dict(subgradient_dict, train.opt_path_LR)
         logger.info("dual subproblems finished")
 
-        # feasible solutions
-        path_cost_feasible = 0
-        # todo, 他这里不对，不应该排序么
-        occupied_nodes = set()
-        count = 0
-        for idx, train in enumerate(train_list):
-            train.update_primal_graph(occupied_nodes)
 
-            train.feasible_path, train.feasible_cost = train.shortest_path_primal()
+        if iter % interval_primal != 0 or iter == iter_max - 1:
+            pass
+        else:
+            # feasible solutions
+            path_cost_feasible = 0
+            # todo, 他这里不对，不应该排序么
+            occupied_nodes = set()
+            count = 0
+            for idx, train in enumerate(train_list):
+                train.update_primal_graph(occupied_nodes)
 
-            if train.feasible_cost == np.inf:
-                path_cost_feasible += max(d['weight']for i, j, d in train.subgraph.edges(data=True)) * len(train.v_staList)
-                continue
-            else:
-                count += 1
-            occupied_nodes.update(train.feasible_path[1:-1])
-            path_cost_feasible += train.feasible_cost
-        logger.info(f"maximum cardinality of feasible paths: {count}")
+                train.feasible_path, train.feasible_cost = train.shortest_path_primal()
+
+                if train.feasible_cost == np.inf:
+                    path_cost_feasible += max(d['weight']for i, j, d in train.subgraph.edges(data=True)) * len(train.v_staList)
+                    continue
+                else:
+                    count += 1
+                occupied_nodes.update(train.feasible_path[1:-1])
+                path_cost_feasible += train.feasible_cost
+            logger.info(f"maximum cardinality of feasible paths: {count}")
 
         UB.append(path_cost_feasible)
 
@@ -297,7 +302,7 @@ if __name__ == '__main__':
     '''
     draw timetable
     '''
-    plt.rcParams['figure.figsize'] = (10.0, 5.0)
+    plt.rcParams['figure.figsize'] = (18.0, 9.0)
     plt.rcParams["font.family"] = 'Times'
     plt.rcParams["font.size"] = 9
     fig = plt.figure(dpi=200)
@@ -337,17 +342,19 @@ if __name__ == '__main__':
     plt.ylim(0, miles[-1])  # y range
 
     plt.xlim(0, time_span)  # x range
-    plt.xticks(np.linspace(0, time_span, int(time_span / 10 + 1)))
+    sticks = 20
+    plt.xticks(np.linspace(0, time_span, sticks))
 
     plt.yticks(miles, station_list, family='Times')
     plt.xlabel('Time (min)', family='Times new roman')
     plt.ylabel('Space (km)', family='Times new roman')
-    plt.show()
+    plt.savefig(f"lagrangian-{train_size}.{station_size}.{time_span}.png", dpi=500)
 
     end_time = time.time()
     time_elapsed = end_time - start_time
     print(time_elapsed)
 
+    plt.clf()
     ## plot the bound updates
     font_dic = {
         "family": "Times",
@@ -356,7 +363,7 @@ if __name__ == '__main__':
         "color": "green",
         "size": 20
     }
-
+    logger.info(f"# of iterations {len(LB)}")
     x_cor = range(1, len(LB) + 1)
     plt.plot(x_cor, LB, label='LB')
     plt.plot(x_cor, UB, label='UB')
@@ -364,4 +371,5 @@ if __name__ == '__main__':
     plt.xlabel('Iteration', fontdict=font_dic)
     plt.ylabel('Bounds update', fontdict=font_dic)
     plt.title('LR: Bounds updates \n', fontsize=23)
-    plt.show()
+    plt.savefig(f"lagrangian-{train_size}.{station_size}.{time_span}.convergence.png", dpi=500)
+
