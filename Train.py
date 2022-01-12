@@ -1,5 +1,7 @@
 # Here defines the info about the trains
 import copy
+import logging
+import numpy as np
 
 from Arc import *
 import networkx as nx
@@ -8,7 +10,8 @@ from util import *
 
 ## 所有的arc取值就是0或1，即选或不选
 
-class Train():
+class Train(object):
+
     def __init__(self, traNo, dep_LB, dep_UB):
         '''
         construct
@@ -39,7 +42,7 @@ class Train():
         self.feasible_cost = 0
         self.timetable = {}  # 以virtual station为key，存int值
         self.speed = None  # 列车速度，300,350
-
+        self.is_feasible = False
         ##################
         # subgraphs for each train
         ##################
@@ -52,6 +55,7 @@ class Train():
         #
         self.source = 's_', -1
         self.sink = '_t', -1
+        self.logger = logging.getLogger(f"train#{self.traNo}")
 
     def __repr__(self):
         return "train" + str(self.traNo)
@@ -211,3 +215,33 @@ class Train():
         """
         self.subgraph_primal = nx.DiGraph(self.subgraph.edges(data=True))
         self.subgraph_primal.remove_nodes_from(occupied_nodes)
+
+    def shortest_path(self, option='dual'):
+        """
+        """
+        i, j = self.source, self.sink
+        _g = self.subgraph if option == 'dual' else self.subgraph_primal
+        try:
+            ssp = nx.shortest_path(_g, i, j, weight='price', method='bellman-ford')
+            cost = nx.path_weight(_g, ssp, weight='price')
+        except Exception as e:
+            # infeasible and unconnected case.
+            # you are unable to create a shortest path.
+            self.logger.warning(f"unable to compute for {self.traNo}")
+            ssp = []
+            cost = np.inf
+        # todo
+        # compute cost
+
+        return ssp, cost
+
+    def shortest_path_primal(self):
+        """
+        """
+        self.is_feasible = False
+        self.feasible_path = None
+        self.feasible_cost = np.inf
+        ssp, cost = self.shortest_path(option='primal')
+        self.is_feasible = (cost < np.inf)
+
+        return ssp, cost

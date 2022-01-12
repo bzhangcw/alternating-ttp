@@ -174,49 +174,10 @@ def associate_arcs_nodes_by_resource_occupation():
 #                         train.timetable[nextSta] = t + arc_length
 def get_train_timetable_from_result():
     for train in train_list:
-        print("===============Tra_" + train.traNo + "======================")
+        if not train.is_feasible:
+            continue
         for node in train.feasible_path:
             train.timetable[node[0]] = node[1]
-
-
-# Labelling Algorithm
-class Label(object):
-    def __init__(self):
-        self.node_passed = []  # 该标记的path，即从source node走到该点的路径，存储一系列node名称(sta, t)，防止deepcopy效率太低！
-        self.cost = 0
-
-    def __repr__(self):
-        temp = ""
-        for node_name in self.node_passed:
-            temp += node_name[0] + "," + str(node_name[1])
-            if node_name != self.node_passed[-1]:
-                temp += " => "
-        return temp
-
-
-def shortest_path(train, option='dual'):
-    """
-    """
-    i, j = train.source, train.sink
-    _g = train.subgraph if option == 'dual' else train.subgraph_primal
-    try:
-        ssp = nx.shortest_path(_g, i, j, weight='price', method='bellman-ford')
-        cost = nx.path_weight(_g, ssp, weight='price')
-    except Exception as e:
-        # infeasible and unconnected case.
-        # you are unable to create a shortest path.
-        logger.exception(e)
-        ssp = []
-        cost = np.inf
-    # todo
-    # compute cost
-
-    return ssp, cost
-
-
-def label_correcting_shortest_path_with_forbidden(summary_interval, org, des, train):
-    pass
-    # todo
 
 
 def update_lagrangian_multipliers(alpha):
@@ -286,8 +247,8 @@ if __name__ == '__main__':
         path_cost_LR = 0
         for train in train_list:
             train.update_arc_multiplier()
-            train.opt_path_LR, train.opt_cost_LR = shortest_path(
-                train
+            train.opt_path_LR, train.opt_cost_LR = train.shortest_path(
+
             )
             train.update_arc_chosen()  # LR中的arc_chosen，用于更新乘子
             path_cost_LR += train.opt_cost_LR
@@ -298,9 +259,9 @@ if __name__ == '__main__':
         occupied_nodes = set()
         for idx, train in enumerate(train_list):
             train.update_primal_graph(occupied_nodes)
-            train.feasible_path, train.feasible_cost = shortest_path(
-                train, option='primal'
-            )
+
+            train.feasible_path, train.feasible_cost = train.shortest_path_primal()
+
             if train.feasible_cost == np.inf:
                 logger.info(f"maximum cardinality of feasible paths: {idx}")
                 break
@@ -331,10 +292,10 @@ if __name__ == '__main__':
     '''
     draw timetable
     '''
-    plt.rcParams['figure.figsize'] = (12.0, 8.0)
+    plt.rcParams['figure.figsize'] = (10.0, 5.0)
     plt.rcParams["font.family"] = 'Times'
     plt.rcParams["font.size"] = 9
-    fig = plt.figure(figsize=(7, 7), dpi=200)
+    fig = plt.figure(dpi=200)
     color_value = {
         '0': 'midnightblue',
         '1': 'mediumblue',
@@ -351,6 +312,8 @@ if __name__ == '__main__':
         train = train_list[i]
         xlist = []
         ylist = []
+        if not train.is_feasible:
+            continue
         for sta_id in range(len(train.staList)):
             sta = train.staList[sta_id]
             if sta_id != 0:  # 不为首站, 有到达
