@@ -30,6 +30,7 @@ train_list: List[Train] = []
 node_list = {}  # 先用车站做key，再用t做key索引到node
 start_time = time.time()
 sec_times_all = {}
+pass_station = {}
 
 
 def read_station(path, size):
@@ -53,7 +54,7 @@ def read_section(path):
     ).set_index("interval")
     global sec_times, sec_times_all
     sec_times = df[350].to_dict()
-    sec_times_all = df.to_dict()
+    sec_times_all = {300: df[300].to_dict(), 350: df[350].to_dict()}
 
 
 def parse_row_to_train(row):
@@ -63,9 +64,12 @@ def parse_row_to_train(row):
     tr.standard = row['标杆车']
     tr.speed = row['速度']
     # todo, what does -1 mean?
-    tr.linePlan = {k: max(row[k], 0) for k in station_list}
+    tr.linePlan = {k: row[k] for k in station_list}
+    if all(value == 0 for value in tr.linePlan.values()):
+        return None
     tr.init_traStaList(station_list)
-    tr.create_arcs_LR(sec_times, time_span)
+    tr.create_arcs_LR(sec_times_all[tr.speed], time_span)
+    tr.pass_station = pass_station
     return tr
 
 
@@ -73,9 +77,15 @@ def read_train(path, size=10):
     df = pd.read_excel(path, dtype={"车次ID": str})
     df = df.rename(columns={k: str(k) for k in df.columns})
     df = df.iloc[:size, :]
-    train_series = df.apply(lambda row: parse_row_to_train(row), axis=1)
+    train_series = df.apply(lambda row: parse_row_to_train(row), axis=1).dropna()
     global train_list
     train_list = train_series.to_list()
+
+
+def read_dwell_time(path):
+    global pass_station
+    df = pd.read_excel(path, dtype={"最小停站时间": int, "最大停站时间": int})
+    pass_station = df[(df["最小停站时间"] == 0) & (df["最大停站时间"] == 0)]["Unnamed: 0"].to_dict()
 
 
 def init_nodes():
@@ -202,6 +212,19 @@ def update_subgradient_dict(subgradient_dict, opt_path_LR):
         subgradient_dict[node] += 1
 
 
+def update_step_size(iter, method="simple"):
+    global subgradient_dict, UB, LB
+    if method == "simple":
+        if iter < 20:
+            alpha = 0.5 / (iter + 1)
+        else:
+            alpha = 0.5 / 20
+    elif method == "polyak":
+        alpha = (UB[-1] - LB[-1]) / np.linalg.norm(subgradient_dict.values()) ** 2
+
+    return alpha
+
+
 if __name__ == '__main__':
 
     station_size = int(os.environ.get('station_size', 5))
@@ -210,6 +233,7 @@ if __name__ == '__main__':
     logger.info(f"size: #train,#station,#timespan: {train_size, station_size, time_span}")
     read_station('raw_data/1-station.xlsx', station_size)
     read_section('raw_data/3-section-time.xlsx')
+    read_dwell_time('raw_data/4-dwell-time.xlsx')
     read_train('raw_data/6-lineplan-down.xlsx', train_size)
 
     '''
@@ -254,7 +278,6 @@ if __name__ == '__main__':
             update_subgradient_dict(subgradient_dict, train.opt_path_LR)
         logger.info("dual subproblems finished")
 
-
         if iter % interval_primal != 0 or iter == iter_max - 1:
             pass
         else:
@@ -280,10 +303,7 @@ if __name__ == '__main__':
         UB.append(path_cost_feasible)
 
         # update lagrangian multipliers
-        if iter < 20:
-            alpha = 0.5 / (iter + 1)
-        else:
-            alpha = 0.5 / 20
+        alpha = update_step_size(iter)
         update_lagrangian_multipliers(alpha, subgradient_dict)
         LB.append(path_cost_LR)
 

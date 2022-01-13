@@ -26,7 +26,8 @@ class Train(object):
         self.stop_addTime = 3  # 停车附加时分
         self.start_addTime = 2  # 起车附加时分
         self.min_dwellTime = 2  # 最小停站时分
-        self.max_dwellTime = 6  # 最大停站时分
+        self.max_dwellTime = 15  # 最大停站时分
+        self.pass_station = {}  # 最大最小停站时分为0的车站
         self.secTimes = {}
         self.right_time_bound = {}  # 各站通过线路时间窗和列车始发时间窗综合确定的右侧边界
         self.depSta = None
@@ -66,9 +67,18 @@ class Train(object):
         :param allStaList:
         :return:
         '''
+        flag = False
         for sta in allStaList:
             if sta in self.linePlan.keys():
-                self.staList.append(sta)
+                if not flag and self.linePlan[sta] == 0:
+                    continue
+                elif flag:
+                    self.staList.append(sta)
+                    if self.linePlan[sta] == -1:
+                        break
+                else:
+                    flag = True
+                    self.staList.append(sta)
 
         self.v_staList.append('s_')
         for i in range(len(self.staList)):
@@ -143,17 +153,17 @@ class Train(object):
                     if t + self.min_dwellTime >= self.right_time_bound[nextSta_dep]:  # 当前t加上最短停站时分都超了，break掉
                         break
                     self.arcs[nextSta_arr, nextSta_dep][t] = {}
-                    for span in range(self.min_dwellTime, self.max_dwellTime):
+                    my_range = range(self.min_dwellTime, self.max_dwellTime + 1) if nextSta not in self.pass_station else range(1)
+                    for span in my_range:
                         if t + span >= self.right_time_bound[nextSta_dep]:
                             break
-                        self.arcs[nextSta_arr, nextSta_dep][t][span] = Arc(self.traNo, nextSta_arr, nextSta_dep, t,
-                                                                           t + span, span)
+                        self.arcs[nextSta_arr, nextSta_dep][t][span] = Arc(self.traNo, nextSta_arr, nextSta_dep, t, t + span, span)
             else:  # 该站不停车，只创建一个竖直弧，长度为0
                 for t in range(minArr, self.right_time_bound[nextSta_arr]):
                     self.arcs[nextSta_arr, nextSta_dep][t] = {}
                     self.arcs[nextSta_arr, nextSta_dep][t][0] = Arc(self.traNo, nextSta_arr, nextSta_dep, t, t, 0)
             # update cur time window
-            minArr += self.min_dwellTime
+            minArr += self.min_dwellTime if nextSta not in self.pass_station else 0
 
         '''
         create arcs involving node t
@@ -176,7 +186,7 @@ class Train(object):
             right_bound_by_sink.append(TimeSpan - accum_time)
             if sta_id != 1:  # 最后一站不用加上停站时分了
                 if self.linePlan[self.staList[sta_id - 1]] == 1:  # 若停站了则加一个2
-                    accum_time += self.min_dwellTime
+                    accum_time += self.min_dwellTime if self.staList[sta_id - 1] not in self.pass_station else 0
                 else:
                     accum_time += 0
                 right_bound_by_sink.append(TimeSpan - accum_time)
@@ -189,7 +199,7 @@ class Train(object):
             accum_time += self.secTimes[self.staList[sta_id], self.staList[sta_id + 1]]
             right_bound_by_dep.append(accum_time)
             if sta_id != len(self.staList) - 2:  # 最后一个区间，不加停站时分
-                accum_time += self.min_dwellTime
+                accum_time += self.min_dwellTime if self.staList[sta_id] not in self.pass_station else 0
                 right_bound_by_dep.append(accum_time)
 
         for sta in self.v_staList:
