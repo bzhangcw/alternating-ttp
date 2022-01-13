@@ -35,7 +35,7 @@ pass_station = {}
 
 def read_station(path, size):
     global miles, v_station_list, station_list
-    df = pd.read_excel(path).sort_values('站名')
+    df = pd.read_excel(path, engine='openpyxl').sort_values('站名')
     df = df.iloc[:size, :]
     miles = df['里程'].values
     station_list = df['站名'].astype(str).to_list()
@@ -49,7 +49,7 @@ def read_station(path, size):
 
 
 def read_section(path):
-    df = pd.read_excel(path).assign(
+    df = pd.read_excel(path, engine='openpyxl').assign(
         interval=lambda dfs: dfs['区间名'].apply(lambda x: tuple(x.split("-")))
     ).set_index("interval")
     global sec_times, sec_times_all
@@ -74,7 +74,7 @@ def parse_row_to_train(row):
 
 
 def read_train(path, size=10):
-    df = pd.read_excel(path, dtype={"车次ID": str})
+    df = pd.read_excel(path, dtype={"车次ID": str}, engine='openpyxl')
     df = df.rename(columns={k: str(k) for k in df.columns})
     df = df.iloc[:size, :]
     train_series = df.apply(lambda row: parse_row_to_train(row), axis=1).dropna()
@@ -84,7 +84,7 @@ def read_train(path, size=10):
 
 def read_dwell_time(path):
     global pass_station
-    df = pd.read_excel(path, dtype={"最小停站时间": int, "最大停站时间": int})
+    df = pd.read_excel(path, dtype={"最小停站时间": int, "最大停站时间": int}, engine='openpyxl')
     pass_station = df[(df["最小停站时间"] == 0) & (df["最大停站时间"] == 0)]["Unnamed: 0"].to_dict()
 
 
