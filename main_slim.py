@@ -263,7 +263,7 @@ if __name__ == '__main__':
             # todo, 他这里不对，不应该排序么
             occupied_nodes = set()
             count = 0
-            for idx, train in enumerate(train_list):
+            for idx, train in enumerate(sorted(train_list, key=lambda tr: tr.opt_cost_LR)):
                 train.update_primal_graph(occupied_nodes)
 
                 train.feasible_path, train.feasible_cost = train.shortest_path_primal()
