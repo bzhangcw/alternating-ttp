@@ -31,6 +31,10 @@ node_list = {}  # 先用车站做key，再用t做key索引到node
 start_time = time.time()
 sec_times_all = {}
 pass_station = {}
+min_dwell_time = {}
+max_dwell_time = {}
+stop_addTime = {}
+start_addTime = {}
 
 
 def read_station(path, size):
@@ -63,13 +67,17 @@ def parse_row_to_train(row):
     tr.up = row['上下行']
     tr.standard = row['标杆车']
     tr.speed = row['速度']
-    # todo, what does -1 mean?
     tr.linePlan = {k: row[k] for k in station_list}
     if all(value == 0 for value in tr.linePlan.values()):
         return None
     tr.init_traStaList(station_list)
-    tr.create_arcs_LR(sec_times_all[tr.speed], time_span)
+    tr.stop_addTime = stop_addTime[tr.speed]
+    tr.start_addTime = start_addTime[tr.speed]
+    tr.min_dwellTime = min_dwell_time
+    tr.max_dwellTime = max_dwell_time
     tr.pass_station = pass_station
+
+    tr.create_arcs_LR(sec_times_all[tr.speed], time_span)
     return tr
 
 
@@ -83,9 +91,22 @@ def read_train(path, size=10):
 
 
 def read_dwell_time(path):
-    global pass_station
-    df = pd.read_excel(path, dtype={"最小停站时间": int, "最大停站时间": int}, engine='openpyxl')
-    pass_station = df[(df["最小停站时间"] == 0) & (df["最大停站时间"] == 0)]["Unnamed: 0"].to_dict()
+    global pass_station, min_dwell_time, max_dwell_time
+    df = pd.read_excel(path, dtype={"最小停站时间": int, "最大停站时间": int, "station": str}, engine='openpyxl')
+    pass_station = df[(df["最小停站时间"] == 0) & (df["最大停站时间"] == 0)]["station"].to_dict()
+    min_dwell_time = df.set_index("station")["最小停站时间"].to_dict()
+    max_dwell_time = df.set_index("station")["最大停站时间"].to_dict()
+
+
+def read_station_stop_start_addtime(path):
+    global stop_addTime, start_addTime
+    df = pd.read_excel(path, dtype={"上行停车附加时分": int, "上行起车附加时分": int, "车站名称": str}, engine='openpyxl')
+    df_350 = df[df["列车速度"] == 350].set_index("车站名称")
+    df_300 = df[df["列车速度"] == 300].set_index("车站名称")
+    stop_addTime[350] = df_350["上行停车附加时分"].to_dict()
+    stop_addTime[300] = df_300["上行停车附加时分"].to_dict()
+    start_addTime[350] = df_350["上行起车附加时分"].to_dict()
+    start_addTime[300] = df_300["上行起车附加时分"].to_dict()
 
 
 def init_nodes():
@@ -171,18 +192,6 @@ def associate_arcs_nodes_by_resource_occupation():
                                 break
 
 
-# def get_train_timetable_from_result():
-#     for train in trainList:
-#         print("===============Tra_" + train.traNo + "======================")
-#         for i in range(len(train.v_staList) - 1):
-#             curSta = train.v_staList[i]
-#             nextSta = train.v_staList[i + 1]
-#             for t, arcs_t in train.arcs[curSta, nextSta].items():
-#                 for arc_length, arc in arcs_t.items():
-#                     if arc.isChosen_LR == 1:
-#                         print(curSta + "(" + str(t) + ") => " + nextSta + "(" + str(t + arc_length) + ")")
-#                         train.timetable[curSta] = t
-#                         train.timetable[nextSta] = t + arc_length
 def get_train_timetable_from_result():
     for train in train_list:
         if not train.is_feasible:
@@ -193,7 +202,8 @@ def get_train_timetable_from_result():
 
 def update_lagrangian_multipliers(alpha, subgradient_dict):
     for node in multiplier.keys():
-            multiplier[node] += alpha * max(subgradient_dict[node], 0)
+        multiplier[node] += alpha * subgradient_dict[node]
+        multiplier[node] = max(multiplier[node], 0)
 
 
 def update_yv_multiplier():
@@ -212,16 +222,20 @@ def update_subgradient_dict(subgradient_dict, opt_path_LR):
         subgradient_dict[node] += 1
 
 
-def update_step_size(iter, method="simple"):
+def update_step_size(iter, method="polyak"):
     global subgradient_dict, UB, LB
     if method == "simple":
         if iter < 20:
             alpha = 0.5 / (iter + 1)
         else:
+            logger.info("switch to constant step size")
             alpha = 0.5 / 20
     elif method == "polyak":
-        alpha = (UB[-1] - LB[-1]) / np.linalg.norm(subgradient_dict.values()) ** 2
-
+        if iter < 20:
+            alpha = min((UB[-1] - LB[-1]) / np.linalg.norm(list(subgradient_dict.values())) ** 2, 0.5)
+        else:
+            logger.info("switch to constant step size")
+            alpha = min((UB[-1] - LB[-1]) / np.linalg.norm(list(subgradient_dict.values())) ** 2, 0.5 / 20)
     return alpha
 
 
@@ -232,6 +246,7 @@ if __name__ == '__main__':
     time_span = int(os.environ.get('time_span', 100))
     logger.info(f"size: #train,#station,#timespan: {train_size, station_size, time_span}")
     read_station('raw_data/1-station.xlsx', station_size)
+    read_station_stop_start_addtime('raw_data/2-station-extra.xlsx')
     read_section('raw_data/3-section-time.xlsx')
     read_dwell_time('raw_data/4-dwell-time.xlsx')
     read_train('raw_data/6-lineplan-down.xlsx', train_size)
@@ -264,6 +279,7 @@ if __name__ == '__main__':
     while gap > minGap and iter < iter_max:
         # compile adjusted multiplier for each node
         #   from the original Lagrangian
+        logger.info("dual subproblems begins")
         update_yv_multiplier()
         nonzeros_xa = {k: v for k, v in xa_map.items() if v > 0}
         nonzeros = {k: v for k, v in yv_multiplier.items() if v > 0}
@@ -276,11 +292,13 @@ if __name__ == '__main__':
             train.update_arc_chosen()  # LR中的arc_chosen，用于更新乘子
             path_cost_LR += train.opt_cost_LR
             update_subgradient_dict(subgradient_dict, train.opt_path_LR)
+        LB.append(path_cost_LR - sum(multiplier.values()))
         logger.info("dual subproblems finished")
 
         if iter % interval_primal != 0 or iter == iter_max - 1:
-            pass
+            logger.info(f"no primal stage this iter: {iter}")
         else:
+            logger.info("primal stage begins")
             # feasible solutions
             path_cost_feasible = 0
             # todo, 他这里不对，不应该排序么
@@ -292,28 +310,28 @@ if __name__ == '__main__':
                 train.feasible_path, train.feasible_cost = train.shortest_path_primal()
 
                 if train.feasible_cost == np.inf:
-                    path_cost_feasible += max(d['weight']for i, j, d in train.subgraph.edges(data=True)) * len(train.v_staList)
+                    path_cost_feasible += max(d['weight']for i, j, d in train.subgraph.edges(data=True)) * (len(train.staList) - 1)
                     continue
                 else:
                     count += 1
                 occupied_nodes.update(train.feasible_path[1:-1])
                 path_cost_feasible += train.feasible_cost
+            UB.append(path_cost_feasible)
             logger.info(f"maximum cardinality of feasible paths: {count}")
-
-        UB.append(path_cost_feasible)
+            logger.info("primal stage finished")
 
         # update lagrangian multipliers
         alpha = update_step_size(iter)
         update_lagrangian_multipliers(alpha, subgradient_dict)
-        LB.append(path_cost_LR)
 
         iter += 1
-        gap = (UB[-1] - LB[-1]) / abs(LB[-1])
+        gap = (UB[-1] - LB[-1]) / (abs(UB[-1]) + 1e-10)
+        assert gap >= 0
 
         if iter % interval == 0:
             print("==================  iteration " + str(iter) + " ==================")
+            print("                 UB: {0:.2f}; LB: {1:.2f}".format(UB[-1], LB[-1]))
             print("                 current gap: " + str(round(gap * 100, 5)) + "% \n")
-            print(f"UB: {path_cost_feasible}; LB: {path_cost_LR}")
 
     get_train_timetable_from_result()
     print("================== solution found ==================")
@@ -392,4 +410,4 @@ if __name__ == '__main__':
     plt.ylabel('Bounds update', fontdict=font_dic)
     plt.title('LR: Bounds updates \n', fontsize=23)
     plt.savefig(f"lagrangian-{train_size}.{station_size}.{time_span}.convergence.png", dpi=500)
-
+    plt.show()
