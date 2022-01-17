@@ -222,13 +222,25 @@ class Train(object):
         price = [(i, j, {'price': v['weight'] + xa_map[i, j] * yv_multiplier[j]}) for i, j, v in subg.edges(data=True)]
         subg.update(edges=price)
 
-    def update_primal_graph(self, occupied_nodes, *args, **kwargs):
+    def update_primal_graph(self, *args, **kwargs):
         """
         use occupied nodes to create a updated primal graph
             to compute primal feasible solutions
         """
         self.subgraph_primal = nx.DiGraph(self.subgraph.edges(data=True))
+
+        occupied_nodes, arcs, incompatible_arcs, *_ = args
+        # step 1,
+        # you should remove the neighborhood of this node
         self.subgraph_primal.remove_nodes_from(occupied_nodes)
+
+        # step 2,
+        # remove any incompatible arcs
+
+        self.subgraph_primal.remove_edges_from(incompatible_arcs)
+
+
+
 
     def shortest_path(self, option='dual'):
         """

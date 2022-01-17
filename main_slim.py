@@ -35,7 +35,10 @@ min_dwell_time = {}
 max_dwell_time = {}
 stop_addTime = {}
 start_addTime = {}
+safe_int = {}
 
+def read_intervals(path):
+    df = pd.read_excel(path, engine='openpyxl').set_index('站名')
 
 def read_station(path, size):
     global miles, v_station_list, station_list
@@ -111,7 +114,7 @@ def read_station_stop_start_addtime(path):
 
 def init_nodes():
     '''
-    initialize nodes, associated with incoming nad outgoing train arcs
+    initialize nodes, associated with incoming and outgoing train arcs
     '''
     # source node
     node_list['s_'] = {}
@@ -236,20 +239,48 @@ def update_step_size(iter, method="polyak"):
         else:
             logger.info("switch to constant step size")
             alpha = min((UB[-1] - LB[-1]) / np.linalg.norm(list(subgradient_dict.values())) ** 2, 0.5 / 20)
+    else:
+        raise ValueError(f"undefined method {method}")
     return alpha
+
+
+def get_occupied_arcs_and_clique(feasible_path):
+    _this_occupied_arcs = {
+        (i, j): (t1, t2) for (i, t1), (j, t2) in
+        zip(feasible_path[1:-2], feasible_path[2:-1])
+        if i[0] != j[1]  # if not same station
+    }
+    # edges starting later yet arriving earlier
+    _this_new_incompatible_arcs = {
+        ((i, st), (j, et))
+        for (i, j), (t1, t2) in _this_occupied_arcs.items()
+        for st in range(t1 + 1, t2) for et in range(st, t2)
+    }
+    # edges starting earlier yet arriving later
+    _this_new_incompatible_arcs.update(
+        ((i, st), (j, et))
+        for (i, j), (t1, t2) in _this_occupied_arcs.items()
+        for st in range(t1 - 10, t1)
+        for et in range(t2, t2 + 10)
+    )
+
+    return _this_occupied_arcs, _this_new_incompatible_arcs
+
+
 
 
 if __name__ == '__main__':
 
-    station_size = int(os.environ.get('station_size', 5))
-    train_size = int(os.environ.get('train_size', 100))
-    time_span = int(os.environ.get('time_span', 100))
+    station_size = int(os.environ.get('station_size', 10))
+    train_size = int(os.environ.get('train_size', 15))
+    time_span = int(os.environ.get('time_span', 200))
     logger.info(f"size: #train,#station,#timespan: {train_size, station_size, time_span}")
     read_station('raw_data/1-station.xlsx', station_size)
     read_station_stop_start_addtime('raw_data/2-station-extra.xlsx')
     read_section('raw_data/3-section-time.xlsx')
     read_dwell_time('raw_data/4-dwell-time.xlsx')
     read_train('raw_data/6-lineplan-down.xlsx', train_size)
+    read_intervals('raw_data/5-safe-intervals.xlsx')
 
     '''
     initialization
@@ -262,6 +293,7 @@ if __name__ == '__main__':
     logger.info("step 2")
     associate_arcs_nodes_by_resource_occupation()
     logger.info("step 3")
+    logger.info(f"actual train size {len(train_list)}")
 
     '''
     Lagrangian relaxation approach
@@ -273,7 +305,7 @@ if __name__ == '__main__':
     gap = 100
     alpha = 0
     iter = 0
-    iter_max = 100
+    iter_max = 30
     interval = 1
     interval_primal = 1
     while gap > minGap and iter < iter_max:
@@ -295,38 +327,45 @@ if __name__ == '__main__':
         LB.append(path_cost_LR - sum(multiplier.values()))
         logger.info("dual subproblems finished")
 
-        if iter % interval_primal != 0 or iter == iter_max - 1:
+        if iter % interval_primal != 0:  # or iter == iter_max - 1:
             logger.info(f"no primal stage this iter: {iter}")
         else:
             logger.info("primal stage begins")
             # feasible solutions
             path_cost_feasible = 0
-            # todo, 他这里不对，不应该排序么
             occupied_nodes = set()
+            occupied_arcs = defaultdict(lambda: set())
+            incompatible_arcs = set()
             count = 0
             for idx, train in enumerate(sorted(train_list, key=lambda tr: tr.opt_cost_LR)):
-                train.update_primal_graph(occupied_nodes)
+                train.update_primal_graph(occupied_nodes, occupied_arcs, incompatible_arcs)
 
                 train.feasible_path, train.feasible_cost = train.shortest_path_primal()
 
-                if train.feasible_cost == np.inf:
-                    path_cost_feasible += max(d['weight']for i, j, d in train.subgraph.edges(data=True)) * (len(train.staList) - 1)
+                if not train.is_feasible:
+                    path_cost_feasible += max(d['weight'] for i, j, d in train.subgraph.edges(data=True)) * (
+                            len(train.staList) - 1)
                     continue
                 else:
                     count += 1
                 occupied_nodes.update(train.feasible_path[1:-1])
+                _this_occupied_arcs, _this_new_incompatible_arcs = get_occupied_arcs_and_clique(train.feasible_path)
+                for k, v in _this_occupied_arcs.items():
+                    occupied_arcs[k].add(v)
+                incompatible_arcs.update(_this_new_incompatible_arcs)
                 path_cost_feasible += train.feasible_cost
+
             UB.append(path_cost_feasible)
             logger.info(f"maximum cardinality of feasible paths: {count}")
             logger.info("primal stage finished")
 
         # update lagrangian multipliers
-        alpha = update_step_size(iter)
+        alpha = update_step_size(iter, method='simple')
         update_lagrangian_multipliers(alpha, subgradient_dict)
 
         iter += 1
         gap = (UB[-1] - LB[-1]) / (abs(UB[-1]) + 1e-10)
-        assert gap >= 0
+        # assert gap >= 0
 
         if iter % interval == 0:
             print("==================  iteration " + str(iter) + " ==================")
@@ -410,4 +449,4 @@ if __name__ == '__main__':
     plt.ylabel('Bounds update', fontdict=font_dic)
     plt.title('LR: Bounds updates \n', fontsize=23)
     plt.savefig(f"lagrangian-{train_size}.{station_size}.{time_span}.convergence.png", dpi=500)
-    plt.show()
+    # plt.show()
