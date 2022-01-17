@@ -33,6 +33,7 @@ class Train(object):
         self.depSta = None
         self.arrSta = None
         self.v_staList = []  # dual stations
+        self.v_sta_type = {}
         self.staList = []  # actual stations
         self.linePlan = {}  # 开行方案字典
         self.opt_path_LR = None  # LR 中的最短路径
@@ -81,11 +82,17 @@ class Train(object):
                     self.staList.append(sta)
 
         self.v_staList.append('s_')
-        for i in range(len(self.staList)):
+        for i, station in enumerate(self.staList):
+            attr = 'p' if self.linePlan[station] == 0 else 'a'
             if i != 0:
-                self.v_staList.append('_' + self.staList[i])
+                self.v_staList.append('_' + station)
+                self.v_sta_type['_' + station] = attr
             if i != len(self.staList) - 1:  # 若不为实际车站的最后一站，则加上sta_
-                self.v_staList.append(self.staList[i] + '_')
+                self.v_staList.append(station + '_')
+                self.v_sta_type[station + '_'] = attr
+
+        self.v_sta_type[f"{self.staList[0]}_"] = 's'
+
         self.v_staList.append('_t')
 
     def create_arcs_LR(self, secTimes, TimeSpan):
@@ -137,7 +144,8 @@ class Train(object):
                 if t + secRunTime >= self.right_time_bound[nextSta_arr]:  # 范围为0 => TimeSpan - 1
                     break
                 self.arcs[curSta_dep, nextSta_arr][t] = {}  # dep-arr在node t的弧集，固定区间运行时分默认只有一个元素
-                self.arcs[curSta_dep, nextSta_arr][t][secRunTime] = Arc(self.traNo, curSta_dep, nextSta_arr, t, t + secRunTime, secRunTime)
+                self.arcs[curSta_dep, nextSta_arr][t][secRunTime] = Arc(self.traNo, curSta_dep, nextSta_arr, t,
+                                                                        t + secRunTime, secRunTime)
             # update cur time window
             minArr += secRunTime
 
@@ -157,7 +165,8 @@ class Train(object):
                     for span in my_range:
                         if t + span >= self.right_time_bound[nextSta_dep]:
                             break
-                        self.arcs[nextSta_arr, nextSta_dep][t][span] = Arc(self.traNo, nextSta_arr, nextSta_dep, t, t + span, span)
+                        self.arcs[nextSta_arr, nextSta_dep][t][span] = Arc(self.traNo, nextSta_arr, nextSta_dep, t,
+                                                                           t + span, span)
             else:  # 该站不停车，只创建一个竖直弧，长度为0
                 for t in range(minArr, self.right_time_bound[nextSta_arr]):
                     self.arcs[nextSta_arr, nextSta_dep][t] = {}
@@ -173,6 +182,8 @@ class Train(object):
             finale_name = '_' + self.staList[-1]
             self.arcs[finale_name, '_t'][t] = {}  # dep-arr在node t的弧集，固定区间运行时分默认只有一个元素
             self.arcs[finale_name, '_t'][t][0] = Arc(self.traNo, finale_name, '_t', t, -1, 0)
+
+        # feed
 
     def update_arc_chosen(self):
         pass
@@ -218,7 +229,6 @@ class Train(object):
         rebuild current price/multiplier to cal shortest path
         """
         subg = self.subgraph
-        price = {}
         price = [(i, j, {'price': v['weight'] + xa_map[i, j] * yv_multiplier[j]}) for i, j, v in subg.edges(data=True)]
         subg.update(edges=price)
 
@@ -229,18 +239,24 @@ class Train(object):
         """
         self.subgraph_primal = nx.DiGraph(self.subgraph.edges(data=True))
 
-        occupied_nodes, arcs, incompatible_arcs, *_ = args
+        occupied_nodes, arcs, incompatible_arcs, _safe_int = args
         # step 1,
-        # you should remove the neighborhood of this node
-        self.subgraph_primal.remove_nodes_from(occupied_nodes)
+        # you should remove the union of neighborhood of each node
+        # i. get neighborhood size
+        radius = {}
+        for (i, t), c in occupied_nodes.items():
+            _type_affix = c + self.v_sta_type.get(i, '%')
+            if _type_affix in _safe_int:
+                radius[i, t] = _safe_int[_type_affix][i.strip("_"), self.speed]
+            else:
+                radius[i, t] = 0  # move the center only.
+        # ii. then remove nodes defined by radius
+        _all_nodes = ((i, t + dlt) for (i, t), r in radius.items() for dlt in range(-r, r + 1))
+        self.subgraph_primal.remove_nodes_from(_all_nodes)
 
         # step 2,
         # remove any incompatible arcs
-
         self.subgraph_primal.remove_edges_from(incompatible_arcs)
-
-
-
 
     def shortest_path(self, option='dual'):
         """

@@ -35,7 +35,6 @@ min_dwell_time = {}
 max_dwell_time = {}
 stop_addTime = {}
 start_addTime = {}
-safe_int = {}
 
 
 def read_intervals(path):
@@ -215,9 +214,9 @@ def associate_arcs_nodes_by_resource_occupation():
 
 def get_train_timetable_from_result():
     for train in train_list:
-        if not train.is_feasible:
+        if not train.is_best_feasible:
             continue
-        for node in train.feasible_path:
+        for node in train.best_path:
             train.timetable[node[0]] = node[1]
 
 
@@ -262,6 +261,15 @@ def update_step_size(iter, method="polyak"):
     return alpha
 
 
+def get_occupied_nodes(train):
+    _centers = train.feasible_path[1:-1]
+    _nodes = {}
+    for vs, t in _centers:
+        _nodes[vs, t] = train.v_sta_type[vs]
+
+    return _nodes
+
+
 def get_occupied_arcs_and_clique(feasible_path):
     _this_occupied_arcs = {
         (i, j): (t1, t2) for (i, t1), (j, t2) in
@@ -290,6 +298,7 @@ if __name__ == '__main__':
     station_size = int(os.environ.get('station_size', 10))
     train_size = int(os.environ.get('train_size', 15))
     time_span = int(os.environ.get('time_span', 200))
+    iter_max = int(os.environ.get('iter_max', 100))
     logger.info(f"size: #train,#station,#timespan: {train_size, station_size, time_span}")
     read_station('raw_data/1-station.xlsx', station_size)
     read_station_stop_start_addtime('raw_data/2-station-extra.xlsx')
@@ -321,9 +330,14 @@ if __name__ == '__main__':
     gap = 100
     alpha = 0
     iter = 0
-    iter_max = 30
+
     interval = 1
     interval_primal = 1
+
+    ######################
+    # best primals
+    ######################
+    max_number = 0
     while gap > minGap and iter < iter_max:
         # compile adjusted multiplier for each node
         #   from the original Lagrangian
@@ -349,12 +363,12 @@ if __name__ == '__main__':
             logger.info("primal stage begins")
             # feasible solutions
             path_cost_feasible = 0
-            occupied_nodes = set()
+            occupied_nodes = {}
             occupied_arcs = defaultdict(lambda: set())
             incompatible_arcs = set()
             count = 0
             for idx, train in enumerate(sorted(train_list, key=lambda tr: tr.opt_cost_LR)):
-                train.update_primal_graph(occupied_nodes, occupied_arcs, incompatible_arcs)
+                train.update_primal_graph(occupied_nodes, occupied_arcs, incompatible_arcs, safe_int)
 
                 train.feasible_path, train.feasible_cost = train.shortest_path_primal()
 
@@ -364,7 +378,8 @@ if __name__ == '__main__':
                     continue
                 else:
                     count += 1
-                occupied_nodes.update(train.feasible_path[1:-1])
+                _this_occupied_nodes = get_occupied_nodes(train)
+                occupied_nodes.update(_this_occupied_nodes)
                 _this_occupied_arcs, _this_new_incompatible_arcs = get_occupied_arcs_and_clique(train.feasible_path)
                 for k, v in _this_occupied_arcs.items():
                     occupied_arcs[k].add(v)
@@ -375,6 +390,13 @@ if __name__ == '__main__':
             logger.info(f"maximum cardinality of feasible paths: {count}")
             logger.info("primal stage finished")
 
+            # update best primal solution
+            if count > max_number:
+                logger.info("best primal solution updated")
+                max_number = count
+                for idx, train in enumerate(train_list):
+                    train.best_path = train.feasible_path
+                    train.is_best_feasible = train.is_feasible
         # update lagrangian multipliers
         alpha = update_step_size(iter, method='simple')
         update_lagrangian_multipliers(alpha, subgradient_dict)
@@ -415,7 +437,7 @@ if __name__ == '__main__':
         train = train_list[i]
         xlist = []
         ylist = []
-        if not train.is_feasible:
+        if not train.is_best_feasible:
             continue
         for sta_id in range(len(train.staList)):
             sta = train.staList[sta_id]
@@ -441,6 +463,9 @@ if __name__ == '__main__':
     plt.yticks(miles, station_list, family='Times')
     plt.xlabel('Time (min)', family='Times new roman')
     plt.ylabel('Space (km)', family='Times new roman')
+    plt.title(f"Best primal solution of # trains, station, periods: ({len(train_list)}, {station_size}, {time_span})\n"
+              f"Number of trains {max_number}", fontdict={"weight": 500, "size": 20})
+
     plt.savefig(f"lagrangian-{train_size}.{station_size}.{time_span}.png", dpi=500)
 
     end_time = time.time()

@@ -22,3 +22,4 @@ node_prec_map = defaultdict(list)
 multiplier = defaultdict(int)  # each (station, t)
 # node multiplier
 yv_multiplier = {}  # the multiplier of each v
+safe_int = {}
