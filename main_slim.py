@@ -37,8 +37,26 @@ stop_addTime = {}
 start_addTime = {}
 safe_int = {}
 
+
 def read_intervals(path):
-    df = pd.read_excel(path, engine='openpyxl').set_index('站名')
+    global safe_int
+    df = pd.read_excel(
+        path, engine='openpyxl'
+    ).rename(columns={
+        "车站": 'station',
+        "到到安全间隔": 'aa',
+        "到通安全间隔": 'ap',
+        "发发安全间隔": 'ss',
+        "发通安全间隔": 'sp',
+        "通到安全间隔": 'pa',
+        "通发安全间隔": 'ps',
+        "通通安全间隔": 'pp',
+    }).astype({'station': str}).query(
+        "station in @station_list"
+    ).set_index(['station', 'speed'])
+
+    safe_int = df.to_dict()
+
 
 def read_station(path, size):
     global miles, v_station_list, station_list
@@ -265,8 +283,6 @@ def get_occupied_arcs_and_clique(feasible_path):
     )
 
     return _this_occupied_arcs, _this_new_incompatible_arcs
-
-
 
 
 if __name__ == '__main__':
