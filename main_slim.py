@@ -14,6 +14,7 @@ from collections import defaultdict
 import logging
 import sys
 import os
+from itertools import product
 
 logging.basicConfig(format="%(asctime)s: %(message)s", level=logging.INFO)
 logger = logging.getLogger("railway")
@@ -129,7 +130,7 @@ def read_station_stop_start_addtime(path):
     start_addTime[300] = df_300["上行起车附加时分"].to_dict()
 
 
-def init_nodes():
+def init_nodes(multiplier=None):
     '''
     initialize nodes, associated with incoming and outgoing train arcs
     '''
@@ -143,7 +144,7 @@ def init_nodes():
             node = Node(sta, t)
             node_list[sta][t] = node
             if "s" not in sta and "t" not in sta:
-                multiplier[(sta, t)] = 0.0
+                multiplier[sta, t] = {"aa": 0, "ap": 0, "ss": 0, "sp": 0, "pa": 0, "ps": 0, "pp": 0}
     # sink node
     node_list['_t'] = {}
     node_list['_t'][-1] = Node('_t', -1)
@@ -221,9 +222,13 @@ def get_train_timetable_from_result():
 
 
 def update_lagrangian_multipliers(alpha, subgradient_dict):
-    for node in multiplier.keys():
-        multiplier[node] += alpha * subgradient_dict[node]
-        multiplier[node] = max(multiplier[node], 0)
+    for node, multi in multiplier.items():
+        for cc in multi.keys():
+            multiplier[node][cc] += alpha * subgradient_dict[node][cc]
+            multiplier[node][cc] = max(multiplier[node][cc], 0)
+    # for node in multiplier.keys():
+    #     multiplier[node] += alpha * subgradient_dict[node]
+    #     multiplier[node] = max(multiplier[node], 0)
 
 
 def update_yv_multiplier():
@@ -237,14 +242,51 @@ def update_yv_multiplier():
     logger.info("multiplier for 'v (nodes)' updated")
 
 
-def update_subgradient_dict(subgradient_dict, node_occupy_dict):
-    for node in multiplier.keys():
-        subgradient_dict[node] = sum(node_occupy_dict[node[0], node[1] + t] for t in range(min(eps, time_span - node[1]))) - 1
+def update_yvc_multiplier(multiplier):
+    for (v_station, t), c in product(multiplier.keys(), category):
+        station = v_station.replace("_", "")
+        interval = max(safe_int[c + c][station, 350], safe_int[c + c][station, 300])
+        if v_station.startswith("_"):
+            if c == "a":
+                interval2 = max(safe_int["pa"][station, 350], safe_int["pa"][station, 300])
+                yvc_multiplier[v_station, t][c] = sum(multiplier[v_station, t - dt]["aa"] for dt in range(min(interval, t + 1))) \
+                                                  + multiplier[v_station, t]["ap"] \
+                                                  + sum(multiplier[v_station, t - dt]["pa"] for dt in range(1, min(interval2, t + 1)))
+            elif c == "p":
+                interval2 = max(safe_int["ap"][station, 350], safe_int["ap"][station, 300])
+                yvc_multiplier[v_station, t][c] = sum(multiplier[v_station, t - dt]["pp"] for dt in range(min(interval, t + 1))) \
+                                                  + multiplier[v_station, t]["pa"] \
+                                                  + sum(multiplier[v_station, t - dt]["ap"] for dt in range(1, min(interval2, t + 1)))
+            else:
+                yvc_multiplier[v_station, t][c] = 0
+        elif v_station.endswith("_"):
+            if c == "s":
+                interval2 = max(safe_int["ps"][station, 350], safe_int["ps"][station, 300])
+                yvc_multiplier[v_station, t][c] = sum(multiplier[v_station, t - dt]["ss"] for dt in range(min(interval, t + 1))) \
+                                                  + multiplier[v_station, t]["sp"] \
+                                                  + sum(multiplier[v_station, t - dt]["ps"] for dt in range(1, min(interval2, t + 1)))
+            elif c == "p":
+                interval2 = max(safe_int["sp"][station, 350], safe_int["sp"][station, 300])
+                yvc_multiplier[v_station, t][c] = multiplier[v_station, t]["ps"] \
+                                                  + sum(multiplier[v_station, t - dt]["sp"] for dt in range(1, min(interval2, t + 1)))
 
 
-def update_node_occupy_dict(node_occupy_dict, opt_path_LR):
-    for node in opt_path_LR[1:-1]:  # z_{j v}
-        node_occupy_dict[node] += 1
+def update_subgradient_dict(node_occupy_dict):
+    subgradient_dict = {}
+    for node, multi in multiplier.items():
+        subgradient_dict[node] = {}
+        for cc, mu in multi.items():
+            station = node[0].replace("_", "")
+            interval = max(safe_int[cc][station, 350], safe_int[cc][station, 300])
+            subgradient_dict[node][cc] = node_occupy_dict[node][cc[0]] \
+                                         + sum(node_occupy_dict[node[0], node[1] + t][cc[1]] for t in range(1, min(interval, time_span - node[1]))) \
+                                         - 1
+    return subgradient_dict
+
+
+def update_node_occupy_dict(node_occupy_dict, train):
+    for node in train.opt_path_LR[1:-1]:  # z_{j v}
+        node_occupy_dict[node][train.v_sta_type[node[0]]] += 1
 
 
 def update_step_size(iter, method="polyak"):
@@ -256,11 +298,12 @@ def update_step_size(iter, method="polyak"):
             logger.info("switch to constant step size")
             alpha = 0.5 / 20
     elif method == "polyak":
+        subg_norm = np.linalg.norm([v for d in subgradient_dict.values() for v in d.values()]) ** 2
         if iter < 20:
-            alpha = min((UB[-1] - LB[-1]) / np.linalg.norm(list(subgradient_dict.values())) ** 2, 0.5)
+            alpha = min((UB[-1] - LB[-1]) / subg_norm, 0.5)
         else:
             logger.info("switch to constant step size")
-            alpha = min((UB[-1] - LB[-1]) / np.linalg.norm(list(subgradient_dict.values())) ** 2, 0.5 / 20)
+            alpha = min((UB[-1] - LB[-1]) / subg_norm, 0.5 / 20)
     else:
         raise ValueError(f"undefined method {method}")
     return alpha
@@ -308,7 +351,7 @@ def check_primal_feasibility(train_list):
 
 
 def check_dual_feasibility(subgradient_dict, multiplier):
-    assert sum(subgradient_dict[node]*multiplier[node] for node in multiplier.keys()) <= 0
+    assert sum(subgradient_dict[node] * multiplier[node] for node in multiplier.keys()) <= 0
 
 
 if __name__ == '__main__':
@@ -330,7 +373,7 @@ if __name__ == '__main__':
     '''
     logger.info("reading finish")
     # init_trains()
-    init_nodes()
+    init_nodes(multiplier)
     logger.info("step 1")
     add_arcs_to_nodes_by_flow()
     logger.info("step 2")
@@ -360,21 +403,17 @@ if __name__ == '__main__':
         # compile adjusted multiplier for each node
         #   from the original Lagrangian
         logger.info("dual subproblems begins")
-        update_yv_multiplier()
-        nonzeros_xa = {k: v for k, v in xa_map.items() if v > 0}
-        nonzeros = {k: v for k, v in yv_multiplier.items() if v > 0}
+        update_yvc_multiplier(multiplier)
         # LR: train sub-problems solving
         path_cost_LR = 0
-        subgradient_dict = {}
-        node_occupy_dict = defaultdict(int)
+        node_occupy_dict = defaultdict(lambda: {"a": 0, "s": 0, "p": 0})
         for train in train_list:
             train.update_arc_multiplier()
             train.opt_path_LR, train.opt_cost_LR = train.shortest_path()
-            train.update_arc_chosen()  # LR中的arc_chosen，用于更新乘子
             path_cost_LR += train.opt_cost_LR
-            update_node_occupy_dict(node_occupy_dict, train.opt_path_LR)
-        update_subgradient_dict(subgradient_dict, node_occupy_dict)
-        LB.append(path_cost_LR - sum(multiplier.values()))
+            update_node_occupy_dict(node_occupy_dict, train)
+        subgradient_dict = update_subgradient_dict(node_occupy_dict)
+        LB.append(path_cost_LR - sum(v for d in multiplier.values() for v in d.values()))
         logger.info("dual subproblems finished")
 
         if iter % interval_primal != 0:  # or iter == iter_max - 1:
@@ -511,5 +550,5 @@ if __name__ == '__main__':
     plt.xlabel('Iteration', fontdict=font_dic)
     plt.ylabel('Bounds update', fontdict=font_dic)
     plt.title('LR: Bounds updates \n', fontsize=23)
-    plt.savefig(f"lagrangian-{train_size}.{station_size}.{time_span}.convergence.png", dpi=500)
+    plt.savefig(f"lagrangian-{train_size}.{station_size}.{time_span}.{iter_max}.convergence.png", dpi=500)
     # plt.show()

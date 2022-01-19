@@ -17,7 +17,7 @@ class Node():
         self.multiplier = 0  # 该节点对应约束的拉格朗日乘子
         self.name = [self.sta_located, self.t_located]
         self.isOccupied = False  # 可行解中，该节点是否已经被占据
-        self.build_precedence_map(epsilon=eps)
+        # self.build_precedence_map(epsilon=eps)
         self._str = self.__str__()
         self.is_sink = sta == NODE_SINK_ARR
 
@@ -72,12 +72,10 @@ class Node():
                         train.subgraph.add_edge((arc_var.staBelong_pre, arc_var.timeBelong_pre),
                                                 (arc_var.staBelong_next, arc_var.timeBelong_next),
                                                 weight=arc_length)
-                        yv2xa_map[(arc_var.staBelong_next, arc_var.timeBelong_next)][(
-                            arc_var.staBelong_pre, arc_var.timeBelong_pre, arc_var.staBelong_next,
-                            arc_var.timeBelong_next)] += 1
-                        xa_map[
-                            (arc_var.staBelong_pre, arc_var.timeBelong_pre), (arc_var.staBelong_next, arc_var.timeBelong_next)
-                        ] += 1
+                        if arc_var.staBelong_next != "_t":
+                            xa_map[
+                                (arc_var.staBelong_pre, arc_var.timeBelong_pre), (arc_var.staBelong_next, arc_var.timeBelong_next)
+                            ][train.v_sta_type[arc_var.staBelong_next]] += 1
 
     def associate_with_outgoing_arcs(self, train):
         '''

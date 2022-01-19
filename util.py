@@ -15,13 +15,15 @@ NODE_SINK_ARR = '_t'
 yv2xa_map = defaultdict(lambda: defaultdict(int))
 # flattened yv2xa
 # (s', t', s, t) arc : value
-xa_map = defaultdict(int)
+xa_map = defaultdict(lambda: {"a": 0, "s": 0, "p": 0})
 # node precedence map in terms of arrival/departure interval
 node_prec_map = defaultdict(list)
 # original Lagrangian
-multiplier = defaultdict(int)  # each (station, t)
+# multiplier = defaultdict(lambda: {"aa": 0, "ap": 0, "ss": 0, "sp": 0, "pa": 0, "ps": 0, "pp": 0})  # each (station, t)
+multiplier = dict()  # each (station, t)
 # node multiplier
 yv_multiplier = {}  # the multiplier of each v
+yvc_multiplier = defaultdict(lambda: {"a": 0, "s": 0, "p": 0})  # the multiplier of each v with type c
 safe_int = {}
-# arrival-arrival headway and departure-departure headway
-eps = 5
+# category list
+category = ["s", "a", "p"]
