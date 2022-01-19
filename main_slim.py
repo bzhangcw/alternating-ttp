@@ -348,8 +348,6 @@ if __name__ == '__main__':
         #   from the original Lagrangian
         logger.info("dual subproblems begins")
         update_yv_multiplier()
-        nonzeros_xa = {k: v for k, v in xa_map.items() if v > 0}
-        nonzeros = {k: v for k, v in yv_multiplier.items() if v > 0}
         # LR: train sub-problems solving
         path_cost_LR = 0
         subgradient_dict = {}

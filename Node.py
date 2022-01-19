@@ -77,7 +77,7 @@ class Node():
                             arc_var.timeBelong_next)] += 1
                         xa_map[
                             (arc_var.staBelong_pre, arc_var.timeBelong_pre), (arc_var.staBelong_next, arc_var.timeBelong_next)
-                        ] += 1
+                        ][train.traNo] += 1
 
     def associate_with_outgoing_arcs(self, train):
         '''
