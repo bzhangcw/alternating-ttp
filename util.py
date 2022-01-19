@@ -15,7 +15,7 @@ NODE_SINK_ARR = '_t'
 yv2xa_map = defaultdict(lambda: defaultdict(int))
 # flattened yv2xa
 # (s', t', s, t) arc : value
-xa_map = defaultdict(lambda: {"a": 0, "s": 0, "p": 0})
+xa_map = defaultdict(lambda: defaultdict(lambda: {"a": 0, "s": 0, "p": 0}))
 # node precedence map in terms of arrival/departure interval
 node_prec_map = defaultdict(list)
 # original Lagrangian

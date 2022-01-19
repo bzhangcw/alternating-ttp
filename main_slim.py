@@ -299,7 +299,7 @@ def update_step_size(iter, method="polyak"):
             alpha = 0.5 / 20
     elif method == "polyak":
         subg_norm = np.linalg.norm([v for d in subgradient_dict.values() for v in d.values()]) ** 2
-        if iter < 20:
+        if iter < 100:
             alpha = min((UB[-1] - LB[-1]) / subg_norm, 0.5)
         else:
             logger.info("switch to constant step size")
@@ -459,7 +459,7 @@ if __name__ == '__main__':
         # check_primal_feasibility(train_list)
         # check_dual_feasibility(subgradient_dict, multiplier)
         # update lagrangian multipliers
-        alpha = update_step_size(iter, method='simple')
+        alpha = update_step_size(iter, method='polyak')
         update_lagrangian_multipliers(alpha, subgradient_dict)
 
         iter += 1

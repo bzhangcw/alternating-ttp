@@ -229,7 +229,7 @@ class Train(object):
         rebuild current price/multiplier to cal shortest path
         """
         subg = self.subgraph
-        price = [(i, j, {'price': v['weight'] + sum(xa_map[i, j][c] * yvc_multiplier[j][c] for c in category)}) for i, j, v in subg.edges(data=True)]
+        price = [(i, j, {'price': v['weight'] + xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]]}) if j[0] not in ["s_", "_t"] else (i, j, {"price": v["weight"]}) for i, j, v in subg.edges(data=True)]
         subg.update(edges=price)
 
     def update_primal_graph(self, *args, **kwargs):
