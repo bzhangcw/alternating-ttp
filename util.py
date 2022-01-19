@@ -23,3 +23,5 @@ multiplier = defaultdict(int)  # each (station, t)
 # node multiplier
 yv_multiplier = {}  # the multiplier of each v
 safe_int = {}
+# arrival-arrival headway and departure-departure headway
+eps = 5

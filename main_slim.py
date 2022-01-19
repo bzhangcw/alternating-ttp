@@ -237,9 +237,14 @@ def update_yv_multiplier():
     logger.info("multiplier for 'v (nodes)' updated")
 
 
-def update_subgradient_dict(subgradient_dict, opt_path_LR):
+def update_subgradient_dict(subgradient_dict, node_occupy_dict):
+    for node in multiplier.keys():
+        subgradient_dict[node] = sum(node_occupy_dict[node[0], node[1] + t] for t in range(min(eps, time_span - node[1]))) - 1
+
+
+def update_node_occupy_dict(node_occupy_dict, opt_path_LR):
     for node in opt_path_LR[1:-1]:  # z_{j v}
-        subgradient_dict[node] += 1
+        node_occupy_dict[node] += 1
 
 
 def update_step_size(iter, method="polyak"):
@@ -347,13 +352,15 @@ if __name__ == '__main__':
         nonzeros = {k: v for k, v in yv_multiplier.items() if v > 0}
         # LR: train sub-problems solving
         path_cost_LR = 0
-        subgradient_dict = defaultdict(lambda: -1)
+        subgradient_dict = {}
+        node_occupy_dict = defaultdict(int)
         for train in train_list:
             train.update_arc_multiplier()
             train.opt_path_LR, train.opt_cost_LR = train.shortest_path()
             train.update_arc_chosen()  # LR中的arc_chosen，用于更新乘子
             path_cost_LR += train.opt_cost_LR
-            update_subgradient_dict(subgradient_dict, train.opt_path_LR)
+            update_node_occupy_dict(node_occupy_dict, train.opt_path_LR)
+        update_subgradient_dict(subgradient_dict, node_occupy_dict)
         LB.append(path_cost_LR - sum(multiplier.values()))
         logger.info("dual subproblems finished")
 
@@ -403,7 +410,7 @@ if __name__ == '__main__':
 
         iter += 1
         gap = (UB[-1] - LB[-1]) / (abs(UB[-1]) + 1e-10)
-        # assert gap >= 0
+        assert gap >= 0
 
         if iter % interval == 0:
             print("==================  iteration " + str(iter) + " ==================")

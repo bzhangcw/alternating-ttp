@@ -5,7 +5,6 @@ from util import *
 # todo
 # a few parameters to be fixed
 ###########
-eps = 5
 
 
 class Node():
@@ -39,8 +38,8 @@ class Node():
         and w.t - v.t <= epsilon
         """
         node_prec_map[self.sta_located, self.t_located] = [
-            (self.sta_located, t) for t in
-            range(self.t_located - 1, max(self.t_located - epsilon - 1, 0), -1)
+            (self.sta_located, self.t_located - t) for t in
+            range(min(self.t_located, epsilon))
         ]
 
     def associate_with_incoming_arcs(self, train):
