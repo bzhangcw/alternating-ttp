@@ -251,7 +251,7 @@ class Train(object):
             else:
                 radius[i, t] = 0  # move the center only.
         # ii. then remove nodes defined by radius
-        _all_nodes = ((i, t + dlt) for (i, t), r in radius.items() for dlt in range(-r, r + 1))
+        _all_nodes = ((i, t + dlt) for (i, t), r in radius.items() for dlt in range(-r + 1, r))
         self.subgraph_primal.remove_nodes_from(_all_nodes)
 
         # step 2,

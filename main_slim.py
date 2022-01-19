@@ -298,6 +298,19 @@ def get_occupied_arcs_and_clique(feasible_path):
     return _this_occupied_arcs, _this_new_incompatible_arcs
 
 
+def check_primal_feasibility(train_list):
+    node_occupy_dict_primal = defaultdict(int)
+    subgradient_dict_primal = defaultdict(int)
+    for train in train_list:
+        update_node_occupy_dict(node_occupy_dict_primal, train.feasible_path)
+    update_subgradient_dict(subgradient_dict_primal, node_occupy_dict_primal)
+    assert all(subg <= 0 for subg in subgradient_dict_primal.values())
+
+
+def check_dual_feasibility(subgradient_dict, multiplier):
+    assert sum(subgradient_dict[node]*multiplier[node] for node in multiplier.keys()) <= 0
+
+
 if __name__ == '__main__':
 
     station_size = int(os.environ.get('station_size', 10))
@@ -404,6 +417,8 @@ if __name__ == '__main__':
                 for idx, train in enumerate(train_list):
                     train.best_path = train.feasible_path
                     train.is_best_feasible = train.is_feasible
+        # check_primal_feasibility(train_list)
+        # check_dual_feasibility(subgradient_dict, multiplier)
         # update lagrangian multipliers
         alpha = update_step_size(iter, method='simple')
         update_lagrangian_multipliers(alpha, subgradient_dict)
