@@ -263,12 +263,10 @@ class Train(object):
         """
         i, j = self.source, self.sink
         _g = self.subgraph if option == 'dual' else self.subgraph_primal
+        _price = 'price' if option == 'dual' else 'weight'
         try:
-            ssp = nx.shortest_path(_g, i, j, weight='price', method='bellman-ford')
-            if option == "dual":
-                cost = nx.path_weight(_g, ssp, weight='price')
-            else:
-                cost = nx.path_weight(_g, ssp, weight='weight')
+            ssp = nx.shortest_path(_g, i, j, weight=_price, method='bellman-ford')
+            cost = nx.path_weight(_g, ssp, weight=_price)
         except Exception as e:
             # infeasible and unconnected case.
             # you are unable to create a shortest path.
