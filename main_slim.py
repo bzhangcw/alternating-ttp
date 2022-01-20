@@ -426,7 +426,7 @@ if __name__ == '__main__':
             occupied_arcs = defaultdict(lambda: set())
             incompatible_arcs = set()
             count = 0
-            for idx, train in enumerate(sorted(train_list, key=lambda tr: tr.opt_cost_LR)):
+            for idx, train in enumerate(sorted(train_list, key=lambda tr: tr.opt_cost_LR, reverse=True)):
                 train.update_primal_graph(occupied_nodes, occupied_arcs, incompatible_arcs, safe_int)
 
                 train.feasible_path, train.feasible_cost = train.shortest_path_primal()
