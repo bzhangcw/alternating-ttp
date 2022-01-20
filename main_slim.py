@@ -355,6 +355,7 @@ if __name__ == '__main__':
         for train in train_list:
             train.update_arc_multiplier()
             train.opt_path_LR, train.opt_cost_LR = train.shortest_path()
+            train.normalize_cost()
             train.update_arc_chosen()  # LR中的arc_chosen，用于更新乘子
             path_cost_LR += train.opt_cost_LR
             update_node_occupy_dict(node_occupy_dict, train.opt_path_LR)
@@ -372,7 +373,7 @@ if __name__ == '__main__':
             occupied_arcs = defaultdict(lambda: set())
             incompatible_arcs = set()
             count = 0
-            for idx, train in enumerate(sorted(train_list, key=lambda tr: tr.opt_cost_LR)):
+            for idx, train in enumerate(sorted(train_list, key=lambda tr: tr.opt_cost_LR_normal)):
                 train.update_primal_graph(occupied_nodes, occupied_arcs, incompatible_arcs, safe_int)
 
                 train.feasible_path, train.feasible_cost = train.shortest_path_primal()

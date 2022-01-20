@@ -39,6 +39,7 @@ class Train(object):
         self.opt_path_LR = None  # LR 中的最短路径
         self.last_opt_path_LR = None
         self.opt_cost_LR = 0
+        self.opt_cost_LR_normal = 0
         self.feasible_path = None  # 可行解中的最短路径
         self.last_feasible_path = None  # 上一个可行解的最短路径，用于置0
         self.feasible_cost = 0
@@ -229,7 +230,8 @@ class Train(object):
         rebuild current price/multiplier to cal shortest path
         """
         subg = self.subgraph
-        price = [(i, j, {'price': v['weight'] + xa_map[i, j][self.traNo] * yv_multiplier[j]}) for i, j, v in subg.edges(data=True)]
+        price = [(i, j, {'price': v['weight'] + xa_map[i, j][self.traNo] * yv_multiplier[j]}) for i, j, v in
+                 subg.edges(data=True)]
         subg.update(edges=price)
 
     def update_primal_graph(self, *args, **kwargs):
@@ -278,10 +280,10 @@ class Train(object):
             cost = np.inf
             if option == "dual":
                 raise e
-        # todo
-        # compute cost
 
+        # compute cost
         return ssp, cost
+
 
     def shortest_path_primal(self):
         """
@@ -293,3 +295,7 @@ class Train(object):
         self.is_feasible = (cost < np.inf)
 
         return ssp, cost
+
+    def normalize_cost(self):
+
+        self.opt_cost_LR_normal = self.opt_cost_LR / len(self.v_staList)
