@@ -60,24 +60,32 @@ class Node():
         if sta_node != train.v_staList[0]:  # 不为第一站，则拥有上一站
             preSta = train.v_staList[train.v_staList.index(sta_node) - 1]  # 已经考虑列车停站情况的车站集
             curSta = sta_node
-            cur_arcs = train.arcs[preSta, curSta]  # 这个区间/车站的所有弧
-            for start_t in cur_arcs.keys():
-                arcs_from_start_t = cur_arcs[start_t]  # 从上一节点在start_t伸出来的arc，包括区间的一个arc和停站弧的若干个arc
-                for arc_length, arc_var in arcs_from_start_t.items():
-                    if arc_length + start_t == t_node or self.is_sink:  # 若该弧流入该节点
+            cur_arcs_ = train.new_arcs[preSta, curSta]  # 这个区间/车站的所有弧
+
+            if self.is_sink:  # 若该弧流入该节点
+                for t_node in cur_arcs_:
+                    for arc_var in cur_arcs_[t_node]:
                         # 若不包含该车的弧列表，则先生成弧列表
-                        if train.traNo not in self.in_arcs.keys():
-                            self.in_arcs[train.traNo] = {}
-                        self.in_arcs[train.traNo][arc_length] = arc_var
-                        train.subgraph.add_edge((arc_var.staBelong_pre, arc_var.timeBelong_pre),
-                                                (arc_var.staBelong_next, arc_var.timeBelong_next),
-                                                weight=arc_length)
-                        yv2xa_map[(arc_var.staBelong_next, arc_var.timeBelong_next)][(
-                            arc_var.staBelong_pre, arc_var.timeBelong_pre, arc_var.staBelong_next,
-                            arc_var.timeBelong_next)] += 1
-                        xa_map[
-                            (arc_var.staBelong_pre, arc_var.timeBelong_pre), (arc_var.staBelong_next, arc_var.timeBelong_next)
-                        ][train.traNo] += 1
+                        self._add_in_arcs(train, arc_var)
+            elif t_node in cur_arcs_:
+                for arc_var in cur_arcs_[t_node]:
+                    self._add_in_arcs(train, arc_var)
+
+    def _add_in_arcs(self,train, arc_var):
+        if train.traNo not in self.in_arcs.keys():
+            self.in_arcs[train.traNo] = {}
+        arc_length = arc_var.arc_length
+        self.in_arcs[train.traNo][arc_length] = arc_var
+        train.subgraph.add_edge((arc_var.staBelong_pre, arc_var.timeBelong_pre),
+                                (arc_var.staBelong_next, arc_var.timeBelong_next),
+                                weight=arc_length)
+        yv2xa_map[(arc_var.staBelong_next, arc_var.timeBelong_next)][(
+            arc_var.staBelong_pre, arc_var.timeBelong_pre, arc_var.staBelong_next,
+            arc_var.timeBelong_next)] += 1
+        xa_map[
+            (arc_var.staBelong_pre, arc_var.timeBelong_pre), (
+                arc_var.staBelong_next, arc_var.timeBelong_next)
+        ][train.traNo] += 1
 
     def associate_with_outgoing_arcs(self, train):
         '''

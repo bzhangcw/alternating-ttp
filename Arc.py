@@ -6,7 +6,7 @@ class Arc(object):
         self.staBelong_next = staBelong_next
         self.timeBelong_pre = timeBelong_pre
         self.timeBelong_next = timeBelong_next
-        self.arc_length = arc_length
+        self.arc_length = max(0, timeBelong_next - max(0,timeBelong_pre))
         self.isChosen_LR = 0 # 0为没选，1为选
         self.before_occupy_dep = 1  # 前1
         self.after_occupy_dep = 2  # 后2
