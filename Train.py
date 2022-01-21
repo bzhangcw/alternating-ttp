@@ -23,6 +23,7 @@ class Train(object):
         self.dep_LB = dep_LB  # 始发时间窗下界
         self.dep_UB = dep_UB  # 始发时间窗上界
         self.arcs = {}  # 内含弧两个边界点的key：[dep, arr], value为弧集字典(key: [t], value: arc字典, key为arc_length) 三层字典嵌套: dep-arr => t => span
+        self.new_arcs = {}
         self.stop_addTime = {}  # 停车附加时分
         self.start_addTime = {}  # 起车附加时分
         self.min_dwellTime = {}  # 最小停站时分
@@ -112,9 +113,11 @@ class Train(object):
         create arcs involving node s
         '''
         self.arcs['s_', self.staList[0] + '_'] = {}
+        self.new_arcs['s_', self.staList[0] + '_'] = defaultdict(list)
         self.arcs['s_', self.staList[0] + '_'][-1] = {}  # source node流出弧, 只有t=-1，因为source node与时间无关
         for t in range(minArr, self.right_time_bound[self.v_staList[1]]):
             self.arcs['s_', self.staList[0] + '_'][-1][t] = Arc(self.traNo, 's_', self.staList[0] + '_', -1, t, 0)
+            self.new_arcs['s_', self.staList[0] + '_'][-1 + t].append(self.arcs['s_', self.staList[0] + '_'][-1][t])
             # 声明弧长为t，实际length为0
         '''
         create arcs between real stations
@@ -134,6 +137,7 @@ class Train(object):
             curSta_dep-->nextSta_arr区间运行弧
             '''
             self.arcs[curSta_dep, nextSta_arr] = {}
+            self.new_arcs[curSta_dep, nextSta_arr] = defaultdict(list)
 
             if self.linePlan[curSta] == 1:  # 本站停车，加起车附加时分
                 secRunTime += self.start_addTime[curSta]
@@ -146,6 +150,7 @@ class Train(object):
                 self.arcs[curSta_dep, nextSta_arr][t] = {}  # dep-arr在node t的弧集，固定区间运行时分默认只有一个元素
                 self.arcs[curSta_dep, nextSta_arr][t][secRunTime] = Arc(self.traNo, curSta_dep, nextSta_arr, t,
                                                                         t + secRunTime, secRunTime)
+                self.new_arcs[curSta_dep, nextSta_arr][t + secRunTime].append(self.arcs[curSta_dep, nextSta_arr][t][secRunTime])
             # update cur time window
             minArr += secRunTime
 
@@ -156,6 +161,7 @@ class Train(object):
                 break
 
             self.arcs[nextSta_arr, nextSta_dep] = {}
+            self.new_arcs[nextSta_arr, nextSta_dep] = defaultdict(list)
             if self.linePlan[nextSta] == 1:  # 该站停车，创建多个停站时间长度的停站弧
                 for t in range(minArr, self.right_time_bound[nextSta_arr]):
                     if t + self.min_dwellTime[nextSta] >= self.right_time_bound[nextSta_dep]:  # 当前t加上最短停站时分都超了，break掉
@@ -167,10 +173,12 @@ class Train(object):
                             break
                         self.arcs[nextSta_arr, nextSta_dep][t][span] = Arc(self.traNo, nextSta_arr, nextSta_dep, t,
                                                                            t + span, span)
+                        self.new_arcs[nextSta_arr, nextSta_dep][t + span].append(self.arcs[nextSta_arr, nextSta_dep][t][span])
             else:  # 该站不停车，只创建一个竖直弧，长度为0
                 for t in range(minArr, self.right_time_bound[nextSta_arr]):
                     self.arcs[nextSta_arr, nextSta_dep][t] = {}
                     self.arcs[nextSta_arr, nextSta_dep][t][0] = Arc(self.traNo, nextSta_arr, nextSta_dep, t, t, 0)
+                    self.new_arcs[nextSta_arr, nextSta_dep][t].append(self.arcs[nextSta_arr, nextSta_dep][t][0])
             # update cur time window
             minArr += self.min_dwellTime[nextSta]
 
@@ -178,10 +186,12 @@ class Train(object):
         create arcs involving node t
         '''
         self.arcs['_' + self.staList[-1], '_t'] = {}
+        self.new_arcs['_' + self.staList[-1], '_t'] = defaultdict(list)
         for t in range(minArr, self.right_time_bound[self.v_staList[-2]]):
             finale_name = '_' + self.staList[-1]
             self.arcs[finale_name, '_t'][t] = {}  # dep-arr在node t的弧集，固定区间运行时分默认只有一个元素
             self.arcs[finale_name, '_t'][t][0] = Arc(self.traNo, finale_name, '_t', t, -1, 0)
+            self.new_arcs[finale_name, '_t'][t].append(self.arcs[finale_name, '_t'][t][0])
 
         # feed
 

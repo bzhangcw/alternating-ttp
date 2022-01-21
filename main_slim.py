@@ -15,6 +15,7 @@ import logging
 import sys
 import os
 from itertools import product
+from line_profiler import *
 
 logging.basicConfig(format="%(asctime)s: %(message)s", level=logging.INFO)
 logger = logging.getLogger("railway")
