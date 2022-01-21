@@ -12,7 +12,6 @@ class Node():
         self.sta_located = sta
         self.t_located = t
         self.in_arcs = {}  # 流入该节点的弧集，以trainNo为key，弧为value
-        self.in_arcs_ = {}
         self.out_arcs = {}  # 流出该节点的弧集，以trainNo为key, 弧为value
         self.incompatible_arcs = []  # 该节点对应资源占用<=1的约束中，不相容弧的集合，以trainNo为索引，子字典以arc_length为key
         self.multiplier = 0  # 该节点对应约束的拉格朗日乘子
@@ -60,7 +59,6 @@ class Node():
         if sta_node != train.v_staList[0]:  # 不为第一站，则拥有上一站
             preSta = train.v_staList[train.v_staList.index(sta_node) - 1]  # 已经考虑列车停站情况的车站集
             curSta = sta_node
-            cur_arcs = train.arcs[preSta, curSta]  # 这个区间/车站的所有弧
             cur_arcs_ = train.new_arcs[preSta, curSta]  # 这个区间/车站的所有弧
 
             if self.is_sink:  # 若该弧流入该节点
