@@ -1,21 +1,17 @@
-import collections
-import re
-from typing import *
-import networkx as nx
-
-from Train import *
-from Node import *
-import copy
-import matplotlib.pyplot as plt
-import numpy as np
-import time
-import pandas as pd
-from collections import defaultdict
+import datetime
 import logging
-import sys
 import os
+import time
+from collections import defaultdict
+from typing import *
 from itertools import product
-from line_profiler import *
+import matplotlib.pyplot as plt
+
+import numpy as np
+import pandas as pd
+
+from Node import *
+from Train import *
 
 logging.basicConfig(format="%(asctime)s: %(message)s", level=logging.INFO)
 logger = logging.getLogger("railway")
@@ -84,7 +80,7 @@ def read_section(path):
 
 
 def parse_row_to_train(row):
-    tr = Train(row['车次ID'], 0, time_span)
+    tr = Train(row['车次ID'], 0, time_span, backend=1)
     tr.preferred_time = row['偏好始发时间']
     tr.up = row['上下行']
     tr.standard = row['标杆车']
@@ -99,7 +95,6 @@ def parse_row_to_train(row):
     tr.max_dwellTime = max_dwell_time
     tr.pass_station = pass_station
 
-    tr.create_arcs_LR(sec_times_all[tr.speed], time_span)
     return tr
 
 
@@ -152,69 +147,6 @@ def init_nodes(multiplier=None):
     # sink node
     node_list['_t'] = {}
     node_list['_t'][-1] = Node('_t', -1)
-
-
-def add_arcs_to_nodes_by_flow():
-    # associate node with train arcs, add incoming and outgoing arcs to nodes
-    for nodes_sta in node_list.values():
-        for node in nodes_sta.values():
-            for train in train_list:
-                node.associate_with_outgoing_arcs(train)
-                node.associate_with_incoming_arcs(train)
-
-
-# 通过列车弧的资源占用特性，将arc与node的关系建立
-def associate_arcs_nodes_by_resource_occupation():
-    for sta in v_station_list:
-        if sta != v_station_list[0] and sta.endswith('_'):  # all section departure stations
-            for t in range(0, time_span):
-                # 先用车站做key，再用t做key索引到node
-                cur_node = node_list[sta][t]
-
-                if len(cur_node.out_arcs) == 0:  # 没有弧
-                    continue
-
-                for tra in cur_node.out_arcs.keys():  # 先索引包含的列车
-                    for out_arc in cur_node.out_arcs[tra].values():  # 遍历这个列车在这个点的所有弧
-                        before_occupy = out_arc.before_occupy_dep
-                        after_occupy = out_arc.after_occupy_dep
-                        for i in range(0, before_occupy + 1):  # 前面节点占用，在这里把自己加上，可以取到0
-                            if t - i >= 0:
-                                node_list[sta][t - i].incompatible_arcs.append(out_arc)
-                                out_arc.node_occupied.append(node_list[sta][t - i])
-                            else:
-                                break
-                        for i in range(1, after_occupy + 1):  # 后面节点占用，这里就不取0了
-                            if t + i < time_span:
-                                node_list[sta][t + i].incompatible_arcs.append(out_arc)
-                                out_arc.node_occupied.append(node_list[sta][t + i])
-                            else:
-                                break
-
-        elif sta != v_station_list[-1] and sta.startswith('_'):  # all section arrival stations
-            for t in range(0, time_span):
-                # 先用车站做key，再用t做key索引到node
-                cur_node = node_list[sta][t]
-
-                if len(cur_node.in_arcs) == 0:  # 没有弧
-                    continue
-
-                for tra in cur_node.in_arcs.keys():  # 先索引包含的列车
-                    for in_arc in cur_node.in_arcs[tra].values():  # 遍历这个列车在这个点的所有弧
-                        before_occupy = in_arc.before_occupy_arr
-                        after_occupy = in_arc.after_occupy_arr
-                        for i in range(0, before_occupy + 1):  # 前面节点占用
-                            if t - i >= 0:
-                                node_list[sta][t - i].incompatible_arcs.append(in_arc)
-                                in_arc.node_occupied.append(node_list[sta][t - i])
-                            else:
-                                break
-                        for i in range(1, after_occupy + 1):  # 后面节点占用
-                            if t + i < time_span:
-                                node_list[sta][t + i].incompatible_arcs.append(in_arc)
-                                in_arc.node_occupied.append(node_list[sta][t + i])
-                            else:
-                                break
 
 
 def get_train_timetable_from_result():
@@ -293,24 +225,19 @@ def update_node_occupy_dict(node_occupy_dict, train):
         node_occupy_dict[node][train.v_sta_type[node[0]]] += 1
 
 
-def update_step_size(iter, method="polyak"):
+def update_step_size(params_subgrad, method="polyak"):
     global subgradient_dict, UB, LB
     if method == "simple":
-        if iter < 20:
-            alpha = 0.5 / (iter + 1)
+        if params_subgrad.iter < 20:
+            params_subgrad.alpha = 0.5 / (params_subgrad.iter + 1)
         else:
             logger.info("switch to constant step size")
-            alpha = 0.5 / 20
+            params_subgrad.alpha = 0.5 / 20
     elif method == "polyak":
         subg_norm = np.linalg.norm([v for d in subgradient_dict.values() for v in d.values()]) ** 2
-        if iter < 100:
-            alpha = min((UB[-1] - LB[-1]) / subg_norm, 0.5)
-        else:
-            logger.info("switch to constant step size")
-            alpha = min((UB[-1] - LB[-1]) / subg_norm, 0.5 / 20)
+        params_subgrad.alpha = params_subgrad.kappa * (UB[-1] - LB[-1]) / subg_norm
     else:
         raise ValueError(f"undefined method {method}")
-    return alpha
 
 
 def get_occupied_nodes(train):
@@ -375,13 +302,20 @@ if __name__ == '__main__':
     '''
     initialization
     '''
+    # create result-founder.
+    subdir_result = datetime.datetime.now().strftime('%y%m%d-%H%M')
+    fdir_result = f"result/{subdir_result}"
+    os.makedirs(fdir_result, exist_ok=True)
     logger.info("reading finish")
     # init_trains()
     init_nodes(multiplier)
     logger.info("step 1")
-    add_arcs_to_nodes_by_flow()
+    logger.info(f"maximum estimate of active nodes {gc.vc}")
+
+    for tr in train_list:
+        tr.create_subgraph(sec_times_all[tr.speed], time_span)
+
     logger.info("step 2")
-    associate_arcs_nodes_by_resource_occupation()
     logger.info("step 3")
     logger.info(f"actual train size {len(train_list)}")
 
@@ -391,10 +325,7 @@ if __name__ == '__main__':
     LB = []
     UB = []
 
-    minGap = 0.1
-    gap = 100
-    alpha = 0
-    iter = 0
+    params_subgrad = SubgradParam()
 
     interval = 1
     interval_primal = 1
@@ -403,13 +334,15 @@ if __name__ == '__main__':
     # best primals
     ######################
     max_number = 0
-    while gap > minGap and iter < iter_max:
+    minGap = 0.1
+    while params_subgrad.gap > minGap and params_subgrad.iter < iter_max:
         # compile adjusted multiplier for each node
         #   from the original Lagrangian
         logger.info("dual subproblems begins")
         update_yvc_multiplier(multiplier)
         # LR: train sub-problems solving
         path_cost_LR = 0
+        subgradient_dict = {}
         node_occupy_dict = defaultdict(lambda: {"a": 0, "s": 0, "p": 0})
         for train in train_list:
             train.update_arc_multiplier()
@@ -420,8 +353,13 @@ if __name__ == '__main__':
         LB.append(path_cost_LR - sum(v for d in multiplier.values() for v in d.values()))
         logger.info("dual subproblems finished")
 
-        if iter % interval_primal != 0:  # or iter == iter_max - 1:
-            logger.info(f"no primal stage this iter: {iter}")
+        lb = path_cost_LR - sum(multiplier.values())
+        params_subgrad.update_bound(lb)
+        LB.append(lb)
+        logger.info(f"dual subproblems finished")
+
+        if params_subgrad.iter % interval_primal != 0:  # or iter == iter_max - 1:
+            logger.info(f"no primal stage this iter: {params_subgrad.iter}")
         else:
             logger.info("primal stage begins")
             # feasible solutions
@@ -435,9 +373,8 @@ if __name__ == '__main__':
                 train.update_primal_graph(occupied_nodes, occupied_arcs, incompatible_arcs, safe_int)
 
                 train.feasible_path, train.feasible_cost = train.shortest_path_primal()
-
                 if not train.is_feasible:
-                    path_cost_feasible += max(d['weight'] for i, j, d in train.subgraph.edges(data=True)) * (
+                    path_cost_feasible += train.max_edge_weight * (
                             len(train.staList) - 1)
                     not_feasible_trains.append(train.traNo)
                     continue
@@ -466,21 +403,20 @@ if __name__ == '__main__':
         # check_primal_feasibility(train_list)
         # check_dual_feasibility(subgradient_dict, multiplier)
         # update lagrangian multipliers
-        alpha = update_step_size(iter, method='polyak')
-        update_lagrangian_multipliers(alpha, subgradient_dict)
+        update_step_size(params_subgrad, method='polyak')
+        update_lagrangian_multipliers(params_subgrad.alpha, subgradient_dict)
 
-        iter += 1
-        gap = (UB[-1] - LB[-1]) / (abs(UB[-1]) + 1e-10)
-        assert gap >= 0
+        params_subgrad.iter += 1
+        params_subgrad.gap = (UB[-1] - LB[-1]) / (abs(UB[-1]) + 1e-3)
 
-        if iter % interval == 0:
-            print("==================  iteration " + str(iter) + " ==================")
-            print("                 UB: {0:.2f}; LB: {1:.2f}".format(UB[-1], LB[-1]))
-            print("                 current gap: " + str(round(gap * 100, 5)) + "% \n")
+        if params_subgrad.iter % interval == 0:
+            logger.info(f"subgrad params: {params_subgrad.__dict__}")
+            logger.info(
+                f"iter#: {params_subgrad.iter}, step: {params_subgrad.alpha}, gap: {params_subgrad.gap: .2%} @[{lb:.3e} - {UB[-1]:.3e}]")
 
     get_train_timetable_from_result()
     print("================== solution found ==================")
-    print("                 final gap: " + str(round(gap * 100, 5)) + "% \n")
+    print("                 final gap: " + str(round(params_subgrad.gap * 100, 5)) + "% \n")
 
     '''
     draw timetable
@@ -534,7 +470,7 @@ if __name__ == '__main__':
     plt.title(f"Best primal solution of # trains, station, periods: ({len(train_list)}, {station_size}, {time_span})\n"
               f"Number of trains {max_number}", fontdict={"weight": 500, "size": 20})
 
-    plt.savefig(f"lagrangian-{train_size}.{station_size}.{time_span}.png", dpi=500)
+    plt.savefig(f"{fdir_result}/lagrangian-{train_size}.{station_size}.{time_span}.png", dpi=500)
 
     end_time = time.time()
     time_elapsed = end_time - start_time
@@ -557,5 +493,5 @@ if __name__ == '__main__':
     plt.xlabel('Iteration', fontdict=font_dic)
     plt.ylabel('Bounds update', fontdict=font_dic)
     plt.title('LR: Bounds updates \n', fontsize=23)
-    plt.savefig(f"lagrangian-{train_size}.{station_size}.{time_span}.{iter_max}.convergence.png", dpi=500)
+    plt.savefig(f"{fdir_result}/lagrangian-{train_size}.{station_size}.{time_span}.{iter_max}.convergence.png", dpi=500)
     # plt.show()
