@@ -145,7 +145,10 @@ def init_nodes(multiplier=None):
             node = Node(sta, t)
             node_list[sta][t] = node
             if "s" not in sta and "t" not in sta:
-                multiplier[sta, t] = {"aa": 0, "ap": 0, "ss": 0, "sp": 0, "pa": 0, "ps": 0, "pp": 0}
+                if sta.startswith("_"):  # arrival
+                    multiplier[sta, t] = {"aa": 0, "ap": 0, "pa": 0, "pp": 0}
+                elif sta.startswith("_"):  # departure
+                    multiplier[sta, t] = {"ss": 0, "sp": 0, "ps": 0}
     # sink node
     node_list['_t'] = {}
     node_list['_t'][-1] = Node('_t', -1)
@@ -342,24 +345,24 @@ def get_occupied_arcs_and_clique(feasible_path):
     return _this_occupied_arcs, _this_new_incompatible_arcs
 
 
-def check_primal_feasibility(train_list):
-    node_occupy_dict_primal = defaultdict(int)
-    subgradient_dict_primal = defaultdict(int)
+def check_dual_feasibility(subgradient_dict, multiplier, train_list, LB):
+    lambda_mul_subg = 0
+    for node in multiplier.keys():
+        lambda_mul_subg += multiplier[node] * subgradient_dict[node]
+
+    dual_cost = LB[-1]
+    dual_cost_2 = 0
     for train in train_list:
-        update_node_occupy_dict(node_occupy_dict_primal, train.feasible_path)
-    update_subgradient_dict(subgradient_dict_primal, node_occupy_dict_primal)
-    assert all(subg <= 0 for subg in subgradient_dict_primal.values())
+        dual_cost_2 += nx.path_weight(train.subgraph, train.opt_path_LR, weight="weight")
 
-
-def check_dual_feasibility(subgradient_dict, multiplier):
-    assert sum(subgradient_dict[node] * multiplier[node] for node in multiplier.keys()) <= 0
+    assert dual_cost == dual_cost_2 + lambda_mul_subg
 
 
 if __name__ == '__main__':
 
-    station_size = int(os.environ.get('station_size', 10))
-    train_size = int(os.environ.get('train_size', 15))
-    time_span = int(os.environ.get('time_span', 200))
+    station_size = int(os.environ.get('station_size', 29))
+    train_size = int(os.environ.get('train_size', 80))
+    time_span = int(os.environ.get('time_span', 500))
     iter_max = int(os.environ.get('iter_max', 100))
     logger.info(f"size: #train,#station,#timespan: {train_size, station_size, time_span}")
     read_station('raw_data/1-station.xlsx', station_size)
@@ -427,6 +430,7 @@ if __name__ == '__main__':
             occupied_arcs = defaultdict(lambda: set())
             incompatible_arcs = set()
             count = 0
+            not_feasible_trains = []
             for idx, train in enumerate(sorted(train_list, key=lambda tr: tr.opt_cost_LR, reverse=True)):
                 train.update_primal_graph(occupied_nodes, occupied_arcs, incompatible_arcs, safe_int)
 
@@ -435,6 +439,7 @@ if __name__ == '__main__':
                 if not train.is_feasible:
                     path_cost_feasible += max(d['weight'] for i, j, d in train.subgraph.edges(data=True)) * (
                             len(train.staList) - 1)
+                    not_feasible_trains.append(train.traNo)
                     continue
                 else:
                     count += 1
@@ -448,6 +453,7 @@ if __name__ == '__main__':
 
             UB.append(path_cost_feasible)
             logger.info(f"maximum cardinality of feasible paths: {count}")
+            logger.info(f"infeasible trains: {not_feasible_trains}")
             logger.info("primal stage finished")
 
             # update best primal solution
