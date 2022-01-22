@@ -283,7 +283,7 @@ class Train(object):
             # infeasible and unconnected case.
             # you are unable to create a shortest path.
             # self.logger.warning(e)
-            self.logger.warning(f"unable to compute for {self.traNo}: {option}")
+            # self.logger.warning(f"unable to compute for {self.traNo}: {option}")
             ssp = []
             cost = np.inf
             if option == "dual":

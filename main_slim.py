@@ -299,11 +299,24 @@ def get_occupied_arcs_and_clique(feasible_path):
     return _this_occupied_arcs, _this_new_incompatible_arcs
 
 
+def check_dual_feasibility(subgradient_dict, multiplier, train_list, LB):
+    lambda_mul_subg = 0
+    for node in multiplier.keys():
+        lambda_mul_subg += multiplier[node] * subgradient_dict[node]
+
+    dual_cost = LB[-1]
+    dual_cost_2 = 0
+    for train in train_list:
+        dual_cost_2 += nx.path_weight(train.subgraph, train.opt_path_LR, weight="weight")
+
+    assert dual_cost == dual_cost_2 + lambda_mul_subg
+
+
 if __name__ == '__main__':
 
-    station_size = int(os.environ.get('station_size', 10))
-    train_size = int(os.environ.get('train_size', 15))
-    time_span = int(os.environ.get('time_span', 200))
+    station_size = int(os.environ.get('station_size', 29))
+    train_size = int(os.environ.get('train_size', 80))
+    time_span = int(os.environ.get('time_span', 500))
     iter_max = int(os.environ.get('iter_max', 100))
     logger.info(f"size: #train,#station,#timespan: {train_size, station_size, time_span}")
     read_station('raw_data/1-station.xlsx', station_size)
@@ -356,7 +369,7 @@ if __name__ == '__main__':
         for train in train_list:
             train.update_arc_multiplier()
             train.opt_path_LR, train.opt_cost_LR = train.shortest_path()
-            train.normalize_cost()
+            # train.normalize_cost()
             train.update_arc_chosen()  # LR中的arc_chosen，用于更新乘子
             path_cost_LR += train.opt_cost_LR
             update_node_occupy_dict(node_occupy_dict, train.opt_path_LR)
@@ -374,7 +387,8 @@ if __name__ == '__main__':
             occupied_arcs = defaultdict(lambda: set())
             incompatible_arcs = set()
             count = 0
-            for idx, train in enumerate(sorted(train_list, key=lambda tr: tr.opt_cost_LR_normal)):
+            not_feasible_trains = []
+            for idx, train in enumerate(sorted(train_list, key=lambda tr: tr.opt_cost_LR)):
                 train.update_primal_graph(occupied_nodes, occupied_arcs, incompatible_arcs, safe_int)
 
                 train.feasible_path, train.feasible_cost = train.shortest_path_primal()
@@ -382,6 +396,7 @@ if __name__ == '__main__':
                 if not train.is_feasible:
                     path_cost_feasible += max(d['weight'] for i, j, d in train.subgraph.edges(data=True)) * (
                             len(train.staList) - 1)
+                    not_feasible_trains.append(train.traNo)
                     continue
                 else:
                     count += 1
@@ -395,6 +410,7 @@ if __name__ == '__main__':
 
             UB.append(path_cost_feasible)
             logger.info(f"maximum cardinality of feasible paths: {count}")
+            logger.info(f"infeasible trains: {not_feasible_trains}")
             logger.info("primal stage finished")
 
             # update best primal solution
@@ -404,6 +420,10 @@ if __name__ == '__main__':
                 for idx, train in enumerate(train_list):
                     train.best_path = train.feasible_path
                     train.is_best_feasible = train.is_feasible
+
+        # check feasibility
+        check_dual_feasibility(subgradient_dict, multiplier, train_list, LB)
+
         # update lagrangian multipliers
         alpha = update_step_size(iter, method='simple')
         update_lagrangian_multipliers(alpha, subgradient_dict)
