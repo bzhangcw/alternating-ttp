@@ -1,14 +1,22 @@
 from collections import defaultdict
+
+import igraph
+
 from util import *
 
 ###########
 # todo
 # a few parameters to be fixed
 ###########
+from igraph import Vertex
 
 
-class Node():
+class Node(object):
     def __init__(self, sta, t):
+        # at each initialization
+        # mark integer id of this node on creation
+        self.id = gc.vc
+        gc.vc += 1
         self.sta_located = sta
         self.t_located = t
         self.in_arcs = {}  # 流入该节点的弧集，以trainNo为key，弧为value
@@ -20,15 +28,18 @@ class Node():
         self.build_precedence_map(epsilon=eps)
         self._str = self.__str__()
         self.is_sink = sta == NODE_SINK_ARR
+        # nodes in gc.
+        gc.id_nodes[self.id] = self
+        gc.tuple_id[sta, t] = self.id
+
+    def __hash__(self):
+        return self._str.__hash__()
 
     def __str__(self):
         return f"node:{self.sta_located}@{self.t_located}"
 
     def __repr__(self):
         return self._str
-
-    def __hash__(self):
-        return self._str.__hash__()
 
     def build_precedence_map(self, epsilon):
         """
@@ -43,7 +54,6 @@ class Node():
         ]
 
     def associate_with_incoming_arcs(self, train):
-        global yv2xa_map
         '''
         associate node with train arcs, add incoming arcs to nodes
         :param train:
@@ -71,7 +81,7 @@ class Node():
                 for arc_var in cur_arcs_[t_node]:
                     self._add_in_arcs(train, arc_var)
 
-    def _add_in_arcs(self,train, arc_var):
+    def _add_in_arcs(self, train, arc_var):
         if train.traNo not in self.in_arcs.keys():
             self.in_arcs[train.traNo] = {}
         arc_length = arc_var.arc_length
@@ -79,9 +89,6 @@ class Node():
         train.subgraph.add_edge((arc_var.staBelong_pre, arc_var.timeBelong_pre),
                                 (arc_var.staBelong_next, arc_var.timeBelong_next),
                                 weight=arc_length)
-        yv2xa_map[(arc_var.staBelong_next, arc_var.timeBelong_next)][(
-            arc_var.staBelong_pre, arc_var.timeBelong_pre, arc_var.staBelong_next,
-            arc_var.timeBelong_next)] += 1
         xa_map[
             (arc_var.staBelong_pre, arc_var.timeBelong_pre), (
                 arc_var.staBelong_next, arc_var.timeBelong_next)
@@ -105,9 +112,10 @@ class Node():
         if sta_node == train.v_staList[-2]:
             b = 0
         if t_node in cur_arcs.keys():  # 如果点t在列车区间/车站弧集当中，source node就是-1
+            subg = train.subgraph
             self.out_arcs[train.traNo] = {}
             for arc_length, arc_var in cur_arcs[t_node].items():
                 self.out_arcs[train.traNo][arc_length] = arc_var
-                train.subgraph.add_edge((arc_var.staBelong_pre, arc_var.timeBelong_pre),
-                                        (arc_var.staBelong_next, arc_var.timeBelong_next),
-                                        weight=arc_length)
+                subg.add_edge((arc_var.staBelong_pre, arc_var.timeBelong_pre),
+                              (arc_var.staBelong_next, arc_var.timeBelong_next),
+                              weight=arc_length)
