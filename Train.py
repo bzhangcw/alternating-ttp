@@ -6,13 +6,10 @@ from typing import Optional
 import numpy as np
 import sortedcollections
 
-from Arc import *
 import igraph as ig
 import networkx as nx
 from util import *
 
-
-## 所有的arc取值就是0或1，即选或不选
 
 class Train(object):
 
@@ -214,17 +211,13 @@ class Train(object):
             use the created nodelist
             you should not initialize any new nodes.
         """
+        raise ValueError("fix this")
+
         self.depSta = self.staList[0]
         self.arrSta = self.staList[-1]
         self.secTimes = secTimes
         self.truncate_train_time_bound(TimeSpan)
-        '''
-        create train arcs
-        :param v_staList:
-        :param secTimes:
-        :param model:
-        :return:
-        '''
+
         minArr = self.dep_LB  # for curSta(judge by dep)
         '''
         create arcs involving node s
@@ -498,7 +491,7 @@ class Train(object):
         for e in subg.es:
             i, j = e['name']
             w = e['weight']
-            p = w + xa_map[i, j][self.traNo] * yv_multiplier[j]
+            p = w + xa_map[i, j][self.traNo] * yv_multiplier.get(j, 0)
             # attr updates.
             e['price'] = p
 

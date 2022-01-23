@@ -44,7 +44,7 @@ gc = GraphCounter()
 class SubgradParam(object):
 
     def __init__(self):
-        self.kappa = 0.7
+        self.kappa = 0.2
         self.alpha = 1.0
         self.changed = 0
         self.num_stuck = 0
@@ -65,6 +65,3 @@ class SubgradParam(object):
         if self.num_stuck >= self.eps_num_stuck:
             self.kappa *= 0.5
             self.num_stuck = 0
-
-
-params_subgrad = SubgradParam()
