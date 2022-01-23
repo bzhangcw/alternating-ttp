@@ -10,7 +10,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from Node import *
 from Train import *
 
 logging.basicConfig(format="%(asctime)s: %(message)s", level=logging.INFO)
@@ -25,7 +24,6 @@ v_station_list = []  # 时空网车站列表，车站一分为二 # 源节点s, 
 sec_times = {}  # total miles for stations
 miles = []
 train_list: List[Train] = []
-node_list = {}  # 先用车站做key，再用t做key索引到node
 start_time = time.time()
 sec_times_all = {}
 pass_station = {}
@@ -307,9 +305,8 @@ if __name__ == '__main__':
     fdir_result = f"result/{subdir_result}"
     os.makedirs(fdir_result, exist_ok=True)
     logger.info("reading finish")
-    # init_trains()
-    init_nodes(multiplier)
     logger.info("step 1")
+    init_nodes(multiplier)
     logger.info(f"maximum estimate of active nodes {gc.vc}")
 
     for tr in train_list:
@@ -335,7 +332,9 @@ if __name__ == '__main__':
     ######################
     max_number = 0
     minGap = 0.1
+    time_start = time.time()
     while params_subgrad.gap > minGap and params_subgrad.iter < iter_max:
+        time_start_iter = time.time()
         # compile adjusted multiplier for each node
         #   from the original Lagrangian
         logger.info("dual subproblems begins")
@@ -400,8 +399,10 @@ if __name__ == '__main__':
                 for idx, train in enumerate(train_list):
                     train.best_path = train.feasible_path
                     train.is_best_feasible = train.is_feasible
-        # check_primal_feasibility(train_list)
-        # check_dual_feasibility(subgradient_dict, multiplier)
+
+        # check feasibility
+        # check_dual_feasibility(subgradient_dict, multiplier, train_list, LB)
+
         # update lagrangian multipliers
         update_step_size(params_subgrad, method='polyak')
         update_lagrangian_multipliers(params_subgrad.alpha, subgradient_dict)
@@ -411,12 +412,11 @@ if __name__ == '__main__':
 
         if params_subgrad.iter % interval == 0:
             logger.info(f"subgrad params: {params_subgrad.__dict__}")
+            time_end_iter = time.time()
             logger.info(
-                f"iter#: {params_subgrad.iter}, step: {params_subgrad.alpha}, gap: {params_subgrad.gap: .2%} @[{lb:.3e} - {UB[-1]:.3e}]")
+                f"time:{time_end_iter - time_start:.3e}/{time_end_iter - time_start_iter:.2f}, iter#: {params_subgrad.iter:.2e}, step:{params_subgrad.alpha:.4f}, gap: {params_subgrad.gap:.2%} @[{lb:.3e} - {UB[-1]:.3e}]")
 
     get_train_timetable_from_result()
-    print("================== solution found ==================")
-    print("                 final gap: " + str(round(params_subgrad.gap * 100, 5)) + "% \n")
 
     '''
     draw timetable
