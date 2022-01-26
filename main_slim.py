@@ -10,6 +10,8 @@ import numpy as np
 import pandas as pd
 
 from Train import *
+from jsp.main import main_jsp
+from gurobipy import GRB
 
 logging.basicConfig(format="%(asctime)s: %(message)s", level=logging.INFO)
 logger = logging.getLogger("railway")
@@ -228,12 +230,62 @@ def check_dual_feasibility(subgradient_dict, multiplier, train_list, LB):
     assert dual_cost == dual_cost_2 + lambda_mul_subg
 
 
+def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="seq"):
+    # if method == "seq":
+    # feasible solutions
+    path_cost_feasible = 0
+    occupied_nodes = {}
+    occupied_arcs = defaultdict(lambda: set())
+    incompatible_arcs = set()
+    count = 0
+    not_feasible_trains = []
+    for idx, train in enumerate(sorted(train_list, key=lambda tr: - tr.opt_cost_LR)):
+        train.update_primal_graph(occupied_nodes, occupied_arcs, incompatible_arcs, safe_int)
+
+        train.feasible_path, train.feasible_cost = train.shortest_path_primal()
+        if not train.is_feasible:
+            path_cost_feasible += train.max_edge_weight * (
+                    len(train.staList) - 1)
+            not_feasible_trains.append(train.traNo)
+            continue
+        else:
+            count += 1
+        _this_occupied_nodes = get_occupied_nodes(train)
+        occupied_nodes.update(_this_occupied_nodes)
+        _this_occupied_arcs, _this_new_incompatible_arcs = get_occupied_arcs_and_clique(train.feasible_path)
+        for k, v in _this_occupied_arcs.items():
+            occupied_arcs[k].add(v)
+        incompatible_arcs.update(_this_new_incompatible_arcs)
+        path_cost_feasible += train.feasible_cost
+
+    if method == "jsp":
+        max_iter = 30
+        if not jsp_init:
+            model, theta_aa, theta_ap, theta_pa, theta_pp, theta_dd, theta_dp, theta_pd = main_jsp()
+            buffer.extend([model, theta_aa, theta_ap, theta_pa, theta_pp, theta_dd, theta_dp, theta_pd])
+            buffer = tuple(buffer)
+        else:
+            model, theta_aa, theta_ap, theta_pa, theta_pp, theta_dd, theta_dp, theta_pd = buffer
+        train_order, overtaking_dict = from_train_path_to_train_order(train_list)
+        fix_train_order_at_station(model, train_order, safe_int, overtaking_dict, theta_aa, theta_ap, theta_pa, theta_pp, theta_dd, theta_dp, theta_pd)
+        model.optimize()
+        if model.status == GRB.INFEASIBLE:
+            IIS_resolve(model, max_iter)
+            model.write("ttp.ilp")
+        model.remove(getConstrByPrefix(model, "headway_fix"))  # remove added headway fix constraints
+        return path_cost_feasible, count, not_feasible_trains, buffer
+    else:
+        raise TypeError(f"method has no wrong type: {method}")
+
+
 if __name__ == '__main__':
 
     station_size = int(os.environ.get('station_size', 29))
     train_size = int(os.environ.get('train_size', 80))
     time_span = int(os.environ.get('time_span', 500))
     iter_max = int(os.environ.get('iter_max', 100))
+    primal_heuristic_method = "jsp"
+    # primal_heuristic_method = "seq"
     logger.info(f"size: #train,#station,#timespan: {train_size, station_size, time_span}")
     read_station('raw_data/1-station.xlsx', station_size)
     read_station_stop_start_addtime('raw_data/2-station-extra.xlsx')
@@ -278,6 +330,8 @@ if __name__ == '__main__':
     max_number = 0
     minGap = 0.1
     time_start = time.time()
+    jsp_init = False
+    buffer = []
     while params_subgrad.gap > minGap and params_subgrad.iter < iter_max:
         time_start_iter = time.time()
         # compile adjusted multiplier for each node
@@ -309,31 +363,8 @@ if __name__ == '__main__':
         else:
             logger.info("primal stage begins")
             # feasible solutions
-            path_cost_feasible = 0
-            occupied_nodes = {}
-            occupied_arcs = defaultdict(lambda: set())
-            incompatible_arcs = set()
-            count = 0
-            not_feasible_trains = []
-            for idx, train in enumerate(sorted(train_list, key=lambda tr: - tr.opt_cost_LR)):
-                train.update_primal_graph(occupied_nodes, occupied_arcs, incompatible_arcs, safe_int)
-
-                train.feasible_path, train.feasible_cost = train.shortest_path_primal()
-                if not train.is_feasible:
-                    path_cost_feasible += train.max_edge_weight * (
-                            len(train.staList) - 1)
-                    not_feasible_trains.append(train.traNo)
-                    continue
-                else:
-                    count += 1
-                _this_occupied_nodes = get_occupied_nodes(train)
-                occupied_nodes.update(_this_occupied_nodes)
-                _this_occupied_arcs, _this_new_incompatible_arcs = get_occupied_arcs_and_clique(train.feasible_path)
-                for k, v in _this_occupied_arcs.items():
-                    occupied_arcs[k].add(v)
-                incompatible_arcs.update(_this_new_incompatible_arcs)
-                path_cost_feasible += train.feasible_cost
-
+            path_cost_feasible, count, not_feasible_trains, buffer = primal_heuristic(train_list, safe_int, jsp_init, buffer, method=primal_heuristic_method)
+            jsp_init = True
             UB.append(path_cost_feasible)
             logger.info(f"maximum cardinality of feasible paths: {count}")
             logger.info(f"infeasible trains: {not_feasible_trains}")
@@ -369,7 +400,7 @@ if __name__ == '__main__':
     draw timetable
     '''
     plt.rcParams['figure.figsize'] = (18.0, 9.0)
-    plt.rcParams["font.family"] = 'Times'
+    # plt.rcParams["font.family"] = 'Times'
     plt.rcParams["font.size"] = 9
     fig = plt.figure(dpi=200)
     color_value = {
