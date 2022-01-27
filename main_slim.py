@@ -60,7 +60,7 @@ def read_station(path, size):
     df = df.iloc[:size, :]
     miles = df['里程'].values
     station_list = df['站名'].astype(str).to_list()
-    v_station_list.append('_s')
+    v_station_list.append('s_')
     for sta in station_list:
         if station_list.index(sta) != 0:  # 不为首站，有到达
             v_station_list.append('_' + sta)
