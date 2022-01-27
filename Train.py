@@ -374,7 +374,8 @@ class Train(object):
         """
         add vertex pair (an edge) to igraph backend.
         """
-        xa_map[_s, _t][self.traNo] += 1
+        if _t[0] not in ["s_", "_t"]:
+            xa_map[_s, _t][self.traNo][self.v_sta_type[_t[0]]] += 1
         if self.backend == 0:
             return -1
         self._ig_nodes.add(_s)
@@ -490,7 +491,7 @@ class Train(object):
         for e in subg.es:
             i, j = e['name']
             w = e['weight']
-            p = w + xa_map[i, j][self.traNo] * yv_multiplier.get(j, 0)
+            p = w + xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]] if j[0] not in ["s_", "_t"] else w
             # attr updates.
             e['price'] = p
 

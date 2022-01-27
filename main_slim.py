@@ -124,29 +124,6 @@ def read_station_stop_start_addtime(path):
     start_addTime[300] = df_300["上行起车附加时分"].to_dict()
 
 
-def init_nodes(multiplier=None):
-    '''
-    initialize nodes, associated with incoming and outgoing train arcs
-    '''
-    # source node
-    node_list['s_'] = {}
-    node_list['s_'][-1] = Node('s_', -1)
-    # initialize node dictionary with key [sta][t]
-    for sta in v_station_list:  # 循环车站
-        node_list[sta] = {}
-        for t in range(0, time_span):  # 循环时刻t
-            node = Node(sta, t)
-            node_list[sta][t] = node
-            if "s" not in sta and "t" not in sta:
-                if sta.startswith("_"):  # arrival
-                    multiplier[sta, t] = {"aa": 0, "ap": 0, "pa": 0, "pp": 0}
-                elif sta.startswith("_"):  # departure
-                    multiplier[sta, t] = {"ss": 0, "sp": 0, "ps": 0}
-    # sink node
-    node_list['_t'] = {}
-    node_list['_t'][-1] = Node('_t', -1)
-
-
 def get_train_timetable_from_result():
     for train in train_list:
         if not train.is_best_feasible:
@@ -177,32 +154,37 @@ def update_yv_multiplier():
 
 
 def update_yvc_multiplier(multiplier):
-    for (v_station, t), c in product(multiplier.keys(), category):
+    for v_station, t in multiplier.keys():
+        if v_station in ["s_", "_t"]:
+            continue
         station = v_station.replace("_", "")
-        interval = max(safe_int[c + c][station, 350], safe_int[c + c][station, 300])
         if v_station.startswith("_"):
-            if c == "a":
-                interval2 = max(safe_int["pa"][station, 350], safe_int["pa"][station, 300])
-                yvc_multiplier[v_station, t][c] = sum(multiplier[v_station, t - dt]["aa"] for dt in range(min(interval, t + 1))) \
-                                                  + multiplier[v_station, t]["ap"] \
-                                                  + sum(multiplier[v_station, t - dt]["pa"] for dt in range(1, min(interval2, t + 1)))
-            elif c == "p":
-                interval2 = max(safe_int["ap"][station, 350], safe_int["ap"][station, 300])
-                yvc_multiplier[v_station, t][c] = sum(multiplier[v_station, t - dt]["pp"] for dt in range(min(interval, t + 1))) \
-                                                  + multiplier[v_station, t]["pa"] \
-                                                  + sum(multiplier[v_station, t - dt]["ap"] for dt in range(1, min(interval2, t + 1)))
-            else:
-                yvc_multiplier[v_station, t][c] = 0
+            for c in ["a", "p"]:
+                interval = max(safe_int[c + c][station, 350], safe_int[c + c][station, 300])
+                if c == "a":
+                    interval2 = max(safe_int["pa"][station, 350], safe_int["pa"][station, 300])
+                    yvc_multiplier[v_station, t][c] = sum(multiplier[v_station, t - dt]["aa"] for dt in range(min(interval, t + 1))) \
+                                                      + multiplier[v_station, t]["ap"] \
+                                                      + sum(multiplier[v_station, t - dt]["pa"] for dt in range(1, min(interval2, t + 1)))
+                elif c == "p":
+                    interval2 = max(safe_int["ap"][station, 350], safe_int["ap"][station, 300])
+                    yvc_multiplier[v_station, t][c] = sum(multiplier[v_station, t - dt]["pp"] for dt in range(min(interval, t + 1))) \
+                                                      + multiplier[v_station, t]["pa"] \
+                                                      + sum(multiplier[v_station, t - dt]["ap"] for dt in range(1, min(interval2, t + 1)))
+                else:
+                    yvc_multiplier[v_station, t][c] = 0
         elif v_station.endswith("_"):
-            if c == "s":
-                interval2 = max(safe_int["ps"][station, 350], safe_int["ps"][station, 300])
-                yvc_multiplier[v_station, t][c] = sum(multiplier[v_station, t - dt]["ss"] for dt in range(min(interval, t + 1))) \
-                                                  + multiplier[v_station, t]["sp"] \
-                                                  + sum(multiplier[v_station, t - dt]["ps"] for dt in range(1, min(interval2, t + 1)))
-            elif c == "p":
-                interval2 = max(safe_int["sp"][station, 350], safe_int["sp"][station, 300])
-                yvc_multiplier[v_station, t][c] = multiplier[v_station, t]["ps"] \
-                                                  + sum(multiplier[v_station, t - dt]["sp"] for dt in range(1, min(interval2, t + 1)))
+            for c in ["s", "p"]:
+                interval = max(safe_int[c + c][station, 350], safe_int[c + c][station, 300])
+                if c == "s":
+                    interval2 = max(safe_int["ps"][station, 350], safe_int["ps"][station, 300])
+                    yvc_multiplier[v_station, t][c] = sum(multiplier[v_station, t - dt]["ss"] for dt in range(min(interval, t + 1))) \
+                                                      + multiplier[v_station, t]["sp"] \
+                                                      + sum(multiplier[v_station, t - dt]["ps"] for dt in range(1, min(interval2, t + 1)))
+                elif c == "p":
+                    interval2 = max(safe_int["sp"][station, 350], safe_int["sp"][station, 300])
+                    yvc_multiplier[v_station, t][c] = multiplier[v_station, t]["ps"] \
+                                                      + sum(multiplier[v_station, t - dt]["sp"] for dt in range(1, min(interval2, t + 1)))
 
 
 def update_subgradient_dict(node_occupy_dict):
@@ -283,6 +265,18 @@ def check_dual_feasibility(subgradient_dict, multiplier, train_list, LB):
     assert dual_cost == dual_cost_2 + lambda_mul_subg
 
 
+def init_multipliers(multiplier, v_station_list):
+    for sta in v_station_list:  # 循环车站
+        for t in range(0, time_span):  # 循环时刻t
+            if sta not in ["s_", "_t"]:
+                if sta.startswith("_"):  # arrival
+                    multiplier[sta, t] = {"aa": 0, "ap": 0, "pa": 0, "pp": 0}
+                elif sta.endswith("_"):  # departure
+                    multiplier[sta, t] = {"ss": 0, "sp": 0, "ps": 0}
+                else:
+                    raise TypeError(f"virtual station has the wrong name: {sta}")
+
+
 if __name__ == '__main__':
 
     station_size = int(os.environ.get('station_size', 29))
@@ -306,7 +300,7 @@ if __name__ == '__main__':
     os.makedirs(fdir_result, exist_ok=True)
     logger.info("reading finish")
     logger.info("step 1")
-    init_nodes(multiplier)
+    init_multipliers(multiplier, v_station_list)
     logger.info(f"maximum estimate of active nodes {gc.vc}")
 
     for tr in train_list:
