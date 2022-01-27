@@ -259,20 +259,27 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="seq"):
         path_cost_feasible += train.feasible_cost
 
     if method == "jsp":
+        # path_method = "dual"  # use primal path
+        path_method = "primal"
         max_iter = 30
         if not jsp_init:
-            model, theta_aa, theta_ap, theta_pa, theta_pp, theta_dd, theta_dp, theta_pd = main_jsp()
-            buffer.extend([model, theta_aa, theta_ap, theta_pa, theta_pp, theta_dd, theta_dp, theta_pd])
+            model, theta_aa, theta_ap, theta_pa, theta_pp, theta_dd, theta_dp, theta_pd, x_var = main_jsp()
+            buffer.extend([model, theta_aa, theta_ap, theta_pa, theta_pp, theta_dd, theta_dp, theta_pd, x_var])
             buffer = tuple(buffer)
         else:
-            model, theta_aa, theta_ap, theta_pa, theta_pp, theta_dd, theta_dp, theta_pd = buffer
-        train_order, overtaking_dict = from_train_path_to_train_order(train_list)
+            model, theta_aa, theta_ap, theta_pa, theta_pp, theta_dd, theta_dp, theta_pd, x_var = buffer
+        train_order, overtaking_dict = from_train_path_to_train_order(train_list, method=path_method)
+        if path_method == "primal":
+            fix_x_constrs = fix_train_at_station(model, x_var, [trn for trn in train_list if trn.is_feasible])
         fix_train_order_at_station(model, train_order, safe_int, overtaking_dict, theta_aa, theta_ap, theta_pa, theta_pp, theta_dd, theta_dp, theta_pd)
+        model.setParam(GRB.Param.TimeLimit, 300)  # 找到可行解就停止求解并返回
         model.optimize()
         if model.status == GRB.INFEASIBLE:
             IIS_resolve(model, max_iter)
             model.write("ttp.ilp")
         model.remove(getConstrByPrefix(model, "headway_fix"))  # remove added headway fix constraints
+        if path_method == "primal":
+            model.remove(fix_x_constrs)
     elif method == "seq":
         pass
     else:

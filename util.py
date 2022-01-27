@@ -71,15 +71,25 @@ class SubgradParam(object):
             self.num_stuck = 0
 
 
-def from_train_path_to_train_order(train_list):
+def from_train_path_to_train_order(train_list, method="dual"):
     overtaking_dict = {}
     for train_1, train_2 in combinations(train_list, 2):
-        if LR_path_overtaking(train_1, train_2):
+        if LR_path_overtaking(train_1, train_2, method):
             overtaking_dict[train_1.traNo, train_2.traNo] = True
     train_order = defaultdict(list)
     for train in train_list:
-        for sta, t in train.opt_path_LR[1:-1]:
-            train_order[sta].append((train, t))
+        if method == "dual":
+            for sta, t in train.opt_path_LR[1:-1]:
+                train_order[sta].append((train, t))
+        elif method == "primal":
+            if train.is_feasible:
+                for sta, t in train.feasible_path[1:-1]:
+                    train_order[sta].append((train, t))
+            else:
+                for sta, t in train.opt_path_LR[1:-1]:
+                    train_order[sta].append((train, t))
+        else:
+            raise TypeError(f"method {method} is wrong")
     train_order = dict(train_order)
     for sta in train_order.keys():
         train_order[sta].sort(key=lambda x: x[1])
@@ -140,6 +150,12 @@ def fix_train_order_at_station(model, train_order, safe_int, overtaking_dict, th
                 raise TypeError(f"virtual station:{v_station} has the wrong type")
 
 
+def fix_train_at_station(model, x_var, feasible_train_list):
+    model.update()
+    x_var_feas = [x_var[train.traNo] for train in feasible_train_list]
+    return model.addConstrs((x_i == 1 for x_i in x_var_feas), name="feasible_fix_x")
+
+
 def IIS_resolve(model, iter_max=30):
     headway_fix_constrs = getConstrByPrefix(model, "headway_fix")
     iter = 0
@@ -154,13 +170,21 @@ def IIS_resolve(model, iter_max=30):
         iter += 1
 
 
-def LR_path_overtaking(train_1, train_2):
+def LR_path_overtaking(train_1, train_2, method="dual"):
+    if method == "dual":
+        path_1 = train_1.opt_path_LR
+        path_2 = train_2.opt_path_LR
+    elif method == "primal":
+        path_1 = train_1.feasible_path if train_1.is_feasible else train_1.opt_path_LR
+        path_2 = train_2.feasible_path if train_2.is_feasible else train_2.opt_path_LR
+    else:
+        raise ValueError(f"method {method} is not supported")
     max_dep = max(int(train_1.depSta), int(train_2.depSta))
     min_arr = min(int(train_1.arrSta), int(train_2.arrSta))
     if max_dep >= min_arr:
-        return
-    train_1_path_LR = [elem for elem in train_1.opt_path_LR[1:-1] if max_dep <= int(elem[0].replace("_", "")) <= min_arr]
-    train_2_path_LR = [elem for elem in train_2.opt_path_LR[1:-1] if max_dep <= int(elem[0].replace("_", "")) <= min_arr]
+        return False
+    train_1_path_LR = [elem for elem in path_1[1:-1] if max_dep <= int(elem[0].replace("_", "")) <= min_arr]
+    train_2_path_LR = [elem for elem in path_2[1:-1] if max_dep <= int(elem[0].replace("_", "")) <= min_arr]
     if train_2_path_LR[0][0].startswith("_"):
         train_2_path_LR.pop(0)
     if train_2_path_LR[-1][0].endswith("_"):
