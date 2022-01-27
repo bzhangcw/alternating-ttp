@@ -85,30 +85,35 @@ class Train(object):
         :param allStaList:
         :return:
         '''
-        flag = False
-        for sta in allStaList:
-            if sta in self.linePlan.keys():
-                if not flag and self.linePlan[sta] == 0:
-                    continue
-                elif flag:
-                    self.staList.append(sta)
-                    if self.linePlan[sta] == -1:
-                        break
-                else:
-                    flag = True
-                    self.staList.append(sta)
+        all_station_list = list(self.linePlan.keys())
+        for station in all_station_list:
+            if self.linePlan[station] in {-1, 1}:
+                depSta = station
+                break
+        for station in all_station_list[::-1]:
+            if self.linePlan[station] in {-1, 1}:
+                arrSta = station
+                break
+
+        in_rail_flag = 0
+        for station in all_station_list:
+            if station == depSta:
+                in_rail_flag = 1
+
+            if in_rail_flag == 1:
+                self.staList.append(station)
+
+            if station == arrSta:
+                in_rail_flag = 0
 
         self.v_staList.append('s_')
         for i, station in enumerate(self.staList):
-            attr = 'p' if self.linePlan[station] == 0 else 'a'
             if i != 0:
                 self.v_staList.append('_' + station)
-                self.v_sta_type['_' + station] = attr
+                self.v_sta_type['_' + station] = "p" if self.linePlan[station] in (0, -1) else "a"
             if i != len(self.staList) - 1:  # 若不为实际车站的最后一站，则加上sta_
                 self.v_staList.append(station + '_')
-                self.v_sta_type[station + '_'] = attr
-
-        self.v_sta_type[f"{self.staList[0]}_"] = 's'
+                self.v_sta_type[station + '_'] = "p" if self.linePlan[station] in (0, -1) else "s"
 
         self.v_staList.append('_t')
 

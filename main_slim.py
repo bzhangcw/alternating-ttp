@@ -4,9 +4,8 @@ import os
 import time
 from collections import defaultdict
 from typing import *
-from itertools import product
-import matplotlib.pyplot as plt
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
@@ -59,7 +58,7 @@ def read_station(path, size):
     df = df.iloc[:size, :]
     miles = df['里程'].values
     station_list = df['站名'].astype(str).to_list()
-    v_station_list.append('_s')
+    v_station_list.append('s_')
     for sta in station_list:
         if station_list.index(sta) != 0:  # 不为首站，有到达
             v_station_list.append('_' + sta)
@@ -137,9 +136,6 @@ def update_lagrangian_multipliers(alpha, subgradient_dict):
         for cc in multi.keys():
             multiplier[node][cc] += alpha * subgradient_dict[node][cc]
             multiplier[node][cc] = max(multiplier[node][cc], 0)
-    # for node in multiplier.keys():
-    #     multiplier[node] += alpha * subgradient_dict[node]
-    #     multiplier[node] = max(multiplier[node], 0)
 
 
 def update_yv_multiplier():
@@ -275,6 +271,7 @@ def init_multipliers(multiplier, v_station_list):
                     multiplier[sta, t] = {"ss": 0, "sp": 0, "ps": 0}
                 else:
                     raise TypeError(f"virtual station has the wrong name: {sta}")
+    return dict(multiplier)
 
 
 if __name__ == '__main__':
@@ -300,7 +297,7 @@ if __name__ == '__main__':
     os.makedirs(fdir_result, exist_ok=True)
     logger.info("reading finish")
     logger.info("step 1")
-    init_multipliers(multiplier, v_station_list)
+    multiplier = init_multipliers(multiplier, v_station_list)
     logger.info(f"maximum estimate of active nodes {gc.vc}")
 
     for tr in train_list:
@@ -343,10 +340,7 @@ if __name__ == '__main__':
             path_cost_LR += train.opt_cost_LR
             update_node_occupy_dict(node_occupy_dict, train)
         subgradient_dict = update_subgradient_dict(node_occupy_dict)
-        LB.append(path_cost_LR - sum(v for d in multiplier.values() for v in d.values()))
-        logger.info("dual subproblems finished")
-
-        lb = path_cost_LR - sum(multiplier.values())
+        lb = path_cost_LR - sum(v for d in multiplier.values() for v in d.values())
         params_subgrad.update_bound(lb)
         LB.append(lb)
         logger.info(f"dual subproblems finished")
