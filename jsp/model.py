@@ -14,7 +14,7 @@ def set_obj_func(model, train_list, W_var, T_var, force_feasibility=0, obj_num=-
         x_var[train.traNo] = model.addVar(vtype=GRB.BINARY, name='x_' + str(int(train.traNo)))
     sense = GRB.MAXIMIZE
     obj.add(quicksum(x_var.values()))
-    model.setParam(GRB.Param.TimeLimit, 100)  # 找到可行解就停止求解并返回
+
     model.setObjective(obj, sense)
 
     return model, x_var
