@@ -273,9 +273,10 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="seq"):
             IIS_resolve(model, max_iter)
             model.write("ttp.ilp")
         model.remove(getConstrByPrefix(model, "headway_fix"))  # remove added headway fix constraints
-        return path_cost_feasible, count, not_feasible_trains, buffer
     else:
         raise TypeError(f"method has no wrong type: {method}")
+
+    return path_cost_feasible, count, not_feasible_trains, buffer
 
 
 if __name__ == '__main__':
