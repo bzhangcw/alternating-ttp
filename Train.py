@@ -38,7 +38,9 @@ class Train(object):
         self.v_sta_type = {}
         self.staList = []  # actual stations
         self.linePlan = {}  # 开行方案字典
-        self.opt_path_LR = None  # LR 中的最短路径
+        self.opt_path_LR = [] # LR 中的最短路径
+        self.opt_path_LR_dict = None  # LR 最短路径作为dict
+        self.opt_path_LR_prev = []  # 上一个迭代钟 LR 中的最短路径
         self.last_opt_path_LR = None
         self.opt_cost_LR = 0
         self.opt_cost_LR_normal = 0
@@ -164,14 +166,14 @@ class Train(object):
         else:
             raise ValueError(f"backend {self.backend} is not supported")
 
-    def update_arc_multiplier(self):
+    def update_arc_multiplier(self, option="lagrange", gamma=0):
         """
         rebuild current price/multiplier to cal shortest path
         """
         if self.backend == 0:
-            self.update_arc_multiplier_nx()
+            self.update_arc_multiplier_nx(option, gamma)
         elif self.backend == 1:
-            self.update_arc_multiplier_ig()
+            self.update_arc_multiplier_ig(option, gamma)
         else:
             raise ValueError(f"backend {self.backend} is not supported")
 
@@ -315,16 +317,26 @@ class Train(object):
             self.arcs[finale_name, '_t'][t][0] = Arc(self.traNo, finale_name, '_t', t, -1, 0)
             self.new_arcs[finale_name, '_t'][t].append(self.arcs[finale_name, '_t'][t][0])
 
-    def update_arc_multiplier_nx(self):
+    def update_arc_multiplier_nx(self, option="lagrange", gamma=0):
         """
         rebuild current price/multiplier to cal shortest path
         """
+        self.opt_path_LR_dict = {node: None for Node in self.opt_path_LR}
         subg = self.subgraph
-        price = [(i, j,
-                  {'price': v['weight'] + xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]],
-                   'multiplier': xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]]}) if j[0] not in ["s_", "_t"] else
-                 (i, j, {"price": v["weight"], 'multiplier': 0})
-                 for i, j, v in subg.edges(data=True)]
+        if option == "lagrange":
+            price = [(i, j,
+                      {'price': v['weight'] + xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]],
+                       'multiplier': xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]]}) if j[0] not in ["s_", "_t"] else
+                     (i, j, {"price": v["weight"], 'multiplier': 0})
+                     for i, j, v in subg.edges(data=True)]
+        elif option == "pdhg":
+            price = [(i, j,
+                      {'price': v['weight'] + xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]] + gamma * (0.5 - ((i, j) in self.opt_path_LR_dict)),
+                       'multiplier': xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]] + gamma * (0.5 - ((i, j) in self.opt_path_LR_dict))}) if j[0] not in ["s_", "_t"] else
+                     (i, j, {"price": v["weight"], 'multiplier': 0})
+                     for i, j, v in subg.edges(data=True)]
+        else:
+            raise ValueError(f"option {option} is not supported")
         subg.update(edges=price)
         self.max_edge_weight = self
 
@@ -497,15 +509,21 @@ class Train(object):
         self._ig_t = self.subgraph.vcount() - 1
         self.max_edge_weight = np.max(self.subgraph.es['weight'])
 
-    def update_arc_multiplier_ig(self):
+    def update_arc_multiplier_ig(self, option="lagrange", gamma=0):
         """
         rebuild current price/multiplier to cal shortest path
         """
+        self.opt_path_LR_dict = {node: None for node in self.opt_path_LR}
         subg = self.subgraph
         for e in subg.es:
             i, j = e['name']
             w = e['weight']
-            e["multiplier"] = xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]] if j[0] not in ["s_", "_t"] else 0
+            if option == "lagrange":
+                e["multiplier"] = xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]] if j[0] not in ["s_", "_t"] else 0
+            elif option == "pdhg":
+                e["multiplier"] = xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]] + gamma * (0.5 - ((i, j) in self.opt_path_LR_dict)) if j[0] not in ["s_", "_t"] else 0
+            else:
+                raise ValueError(f"option {option} is not supported")
             p = w + e["multiplier"]
             # attr updates.
             e['price'] = p
@@ -567,3 +585,7 @@ class Train(object):
             return ssp_literal, cost, lag_cost
         else:
             return ssp_literal, cost
+
+    def save_prev_lr_path(self):
+        self.opt_path_LR_prev = self.opt_path_LR
+        self.opt_path_LR_prev_dict = {node: None for node in self.opt_path_LR_prev}

@@ -140,17 +140,6 @@ def update_lagrangian_multipliers(alpha, subgradient_dict):
             multiplier[node][cc] = max(multiplier[node][cc], 0)
 
 
-def update_yv_multiplier():
-    """
-    multiplier for each node (v)
-    """
-    for (station, t), predecessors in node_prec_map.items():
-        yv_multiplier[station, t] = sum(
-            multiplier[p] for p in predecessors
-        )
-    logger.info("multiplier for 'v (nodes)' updated")
-
-
 def update_yvc_multiplier(multiplier):
     for v_station, t in multiplier.keys():
         if v_station in ["s_", "_t"]:
@@ -198,9 +187,15 @@ def update_subgradient_dict(node_occupy_dict):
     return subgradient_dict
 
 
-def update_node_occupy_dict(node_occupy_dict, train):
-    for node in train.opt_path_LR[1:-1]:  # z_{j v}
-        node_occupy_dict[node][train.v_sta_type[node[0]]] += 1
+def update_node_occupy_dict(node_occupy_dict, train, option="lagrange", alpha=1):
+    if option == "lagrange":
+        for node in train.opt_path_LR[1:-1]:  # z_{j v}
+            node_occupy_dict[node][train.v_sta_type[node[0]]] += 1
+    elif option == "pdhg":
+        for node in train.opt_path_LR[1:-1]:
+            node_occupy_dict[node][train.v_sta_type[node[0]]] += 1 + alpha*(1 - (node in train.opt_path_LR_prev_dict))
+    else:
+        raise ValueError(f"option {option} is not supported")
 
 
 def update_step_size(params_subgrad, method="polyak"):
@@ -340,9 +335,7 @@ if __name__ == '__main__':
     train_size = int(os.environ.get('train_size', 80))
     time_span = int(os.environ.get('time_span', 500))
     iter_max = int(os.environ.get('iter_max', 100))
-    primal_heuristic_method = "jsp"
-    # primal_heuristic_method = "seq"
-    logger.info(f"size: #train,#station,#timespan: {train_size, station_size, time_span}")
+    logger.info(f"size: #train,#station,#timespan,#iter_max: {train_size, station_size, time_span, iter_max}")
     read_station('raw_data/1-station.xlsx', station_size)
     read_station_stop_start_addtime('raw_data/2-station-extra.xlsx')
     read_section('raw_data/3-section-time.xlsx')
@@ -399,7 +392,8 @@ if __name__ == '__main__':
         subgradient_dict = {}
         node_occupy_dict = defaultdict(lambda: {"a": 0, "s": 0, "p": 0})
         for train in train_list:
-            train.update_arc_multiplier()
+            train.update_arc_multiplier(option=params_subgrad.dual_method, gamma=params_subgrad.gamma)
+            train.save_prev_lr_path()
             train.opt_path_LR, train.opt_cost_LR, train.opt_cost_multiplier = train.shortest_path()
             path_cost_LR += train.opt_cost_LR
             update_node_occupy_dict(node_occupy_dict, train)
@@ -414,7 +408,7 @@ if __name__ == '__main__':
         else:
             logger.info("primal stage begins")
             # feasible solutions
-            path_cost_feasible, count, not_feasible_trains, buffer = primal_heuristic(train_list, safe_int, jsp_init, buffer, method=primal_heuristic_method)
+            path_cost_feasible, count, not_feasible_trains, buffer = primal_heuristic(train_list, safe_int, jsp_init, buffer, method=params_subgrad.primal_heuristic_method)
             jsp_init = True
             UB.append(path_cost_feasible)
             logger.info(f"maximum cardinality of feasible paths: {count}")
