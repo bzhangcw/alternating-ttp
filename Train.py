@@ -320,7 +320,11 @@ class Train(object):
         rebuild current price/multiplier to cal shortest path
         """
         subg = self.subgraph
-        price = [(i, j, {'price': v['weight'] + xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]]}) if j[0] not in ["s_", "_t"] else (i, j, {"price": v["weight"]}) for i, j, v in subg.edges(data=True)]
+        price = [(i, j,
+                  {'price': v['weight'] + xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]],
+                   'multiplier': xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]]}) if j[0] not in ["s_", "_t"] else
+                 (i, j, {"price": v["weight"], 'multiplier': 0})
+                 for i, j, v in subg.edges(data=True)]
         subg.update(edges=price)
         self.max_edge_weight = self
 
@@ -359,6 +363,8 @@ class Train(object):
         try:
             ssp = nx.shortest_path(_g, i, j, weight=_price, method='bellman-ford')
             cost = nx.path_weight(_g, ssp, weight=_price)
+            if option == "dual":
+                lag_cost = nx.path_weight(_g, ssp, weight="multiplier")
         except Exception as e:
             # infeasible and unconnected case.
             # you are unable to create a shortest path.
@@ -370,7 +376,10 @@ class Train(object):
                 raise e
 
         # compute cost
-        return ssp, cost
+        if option == "dual":
+            return ssp, cost, lag_cost
+        else:
+            return ssp, cost
 
     #################
     # iGraph
@@ -496,7 +505,8 @@ class Train(object):
         for e in subg.es:
             i, j = e['name']
             w = e['weight']
-            p = w + xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]] if j[0] not in ["s_", "_t"] else w
+            e["multiplier"] = xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]] if j[0] not in ["s_", "_t"] else 0
+            p = w + e["multiplier"]
             # attr updates.
             e['price'] = p
 
@@ -540,7 +550,8 @@ class Train(object):
                 # todo, fix this
                 edges = _g.get_eids(path=ssp)
                 cost = sum(_g.es[edges][_price])
-
+                if option == "dual":
+                    lag_cost = sum(_g.es[edges]["multiplier"])
             except Exception as e:
                 # infeasible and unconnected case.
                 # you are unable to create a shortest path.
@@ -552,4 +563,7 @@ class Train(object):
                     raise e
 
         # compute cost
-        return ssp_literal, cost
+        if option == "dual":
+            return ssp_literal, cost, lag_cost
+        else:
+            return ssp_literal, cost

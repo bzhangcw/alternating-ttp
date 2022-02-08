@@ -86,9 +86,9 @@ def from_train_path_to_train_order(train_list, method="dual"):
             if train.is_feasible:
                 for sta, t in train.feasible_path[1:-1]:
                     train_order[sta].append((train, t))
-            else:
-                for sta, t in train.opt_path_LR[1:-1]:
-                    train_order[sta].append((train, t))
+            # else:
+            #     for sta, t in train.opt_path_LR[1:-1]:
+            #         train_order[sta].append((train, t))
         else:
             raise TypeError(f"method {method} is wrong")
     train_order = dict(train_order)
