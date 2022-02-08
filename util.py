@@ -50,12 +50,15 @@ class SubgradParam(object):
     def __init__(self):
         self.kappa = 0.2
         self.alpha = 1.0
+        self.gamma = 0.1  # parameter for argmin x
         self.changed = 0
         self.num_stuck = 0
         self.eps_num_stuck = 3
         self.iter = 0
         self.lb = 1e-6
         self.gap = 1
+        self.dual_method = "pdhg"  # "lagrange" or "pdhg"
+        self.primal_heuristic_method = "seq"  # "jsp" or "seq"
 
     def update_bound(self, lb):
         if lb >= self.lb:

@@ -165,10 +165,16 @@ def update_subgradient_dict(subgradient_dict, node_occupy_dict):
             node_occupy_dict[node[0], node[1] + t] for t in range(min(eps, time_span - node[1]))) - 1
 
 
-def update_node_occupy_dict(node_occupy_dict, opt_path_LR):
-    for node in opt_path_LR[1:-1]:  # z_{j v}
-        node_occupy_dict[node] += 1
-
+def update_node_occupy_dict(node_occupy_dict, opt_path_LR, option="lagrange", alpha=1):
+    if option == "lagrange":
+        for node in opt_path_LR[1:-1]:  # z_{j v}
+            node_occupy_dict[node] += 1
+    elif option == "pdhg":
+        for node in opt_path_LR[1:-1]:  # z_{j v}
+            node_occupy_dict[node] += 1 + alpha*(1 - (node in train.opt_path_LR_prev_dict))
+    else:
+        raise ValueError(f"option {option} is not supported")
+        
 
 def update_step_size(params_subgrad, method="polyak"):
     global subgradient_dict, UB, LB
@@ -294,9 +300,7 @@ if __name__ == '__main__':
     train_size = int(os.environ.get('train_size', 80))
     time_span = int(os.environ.get('time_span', 500))
     iter_max = int(os.environ.get('iter_max', 100))
-    primal_heuristic_method = "jsp"
-    # primal_heuristic_method = "seq"
-    logger.info(f"size: #train,#station,#timespan: {train_size, station_size, time_span}")
+    logger.info(f"size: #train,#station,#timespan,#iter_max: {train_size, station_size, time_span, iter_max}")
     read_station('raw_data/1-station.xlsx', station_size)
     read_station_stop_start_addtime('raw_data/2-station-extra.xlsx')
     read_section('raw_data/3-section-time.xlsx')
@@ -355,7 +359,8 @@ if __name__ == '__main__':
         node_occupy_dict = defaultdict(int)
 
         for train in train_list:
-            train.update_arc_multiplier()
+            train.update_arc_multiplier(option=params_subgrad.dual_method, gamma=params_subgrad.gamma)
+            train.save_prev_lr_path()
             train.opt_path_LR, train.opt_cost_LR, train.opt_cost_multiplier = train.shortest_path()
 
             path_cost_LR += train.opt_cost_LR
@@ -373,7 +378,7 @@ if __name__ == '__main__':
         else:
             logger.info("primal stage begins")
             # feasible solutions
-            path_cost_feasible, count, not_feasible_trains, buffer = primal_heuristic(train_list, safe_int, jsp_init, buffer, method=primal_heuristic_method)
+            path_cost_feasible, count, not_feasible_trains, buffer = primal_heuristic(train_list, safe_int, jsp_init, buffer, method=params_subgrad.primal_heuristic_method)
             jsp_init = True
             UB.append(path_cost_feasible)
             logger.info(f"maximum cardinality of feasible paths: {count}")
