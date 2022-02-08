@@ -239,7 +239,7 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="seq"):
     incompatible_arcs = set()
     count = 0
     not_feasible_trains = []
-    for idx, train in enumerate(sorted(train_list, key=lambda tr: - tr.opt_cost_LR)):
+    for idx, train in enumerate(sorted(train_list, key=lambda tr: - tr.opt_cost_multiplier)):
         train.update_primal_graph(occupied_nodes, occupied_arcs, incompatible_arcs, safe_int)
 
         train.feasible_path, train.feasible_cost = train.shortest_path_primal()
@@ -272,7 +272,7 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="seq"):
         if path_method == "primal":
             fix_x_constrs = fix_train_at_station(model, x_var, [trn for trn in train_list if trn.is_feasible])
         fix_train_order_at_station(model, train_order, safe_int, overtaking_dict, theta_aa, theta_ap, theta_pa, theta_pp, theta_dd, theta_dp, theta_pd)
-        model.setParam(GRB.Param.TimeLimit, 300)  # 找到可行解就停止求解并返回
+        model.setParam(GRB.Param.TimeLimit, 600)  # 找到可行解就停止求解并返回
         model.optimize()
         if model.status == GRB.INFEASIBLE:
             IIS_resolve(model, max_iter)
@@ -356,7 +356,7 @@ if __name__ == '__main__':
 
         for train in train_list:
             train.update_arc_multiplier()
-            train.opt_path_LR, train.opt_cost_LR = train.shortest_path()
+            train.opt_path_LR, train.opt_cost_LR, train.opt_cost_multiplier = train.shortest_path()
 
             path_cost_LR += train.opt_cost_LR
             update_node_occupy_dict(node_occupy_dict, train.opt_path_LR)
