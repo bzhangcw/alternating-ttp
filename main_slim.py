@@ -245,7 +245,7 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="seq"):
     incompatible_arcs = set()
     count = 0
     not_feasible_trains = []
-    for idx, train in enumerate(sorted(train_list, key=lambda tr: - tr.opt_cost_multiplier)):
+    for idx, train in enumerate(sorted(train_list, key=lambda tr: tr.opt_cost_LR, reverse=True)):
         train.update_primal_graph(occupied_nodes, occupied_arcs, incompatible_arcs, safe_int)
 
         train.feasible_path, train.feasible_cost = train.shortest_path_primal()
