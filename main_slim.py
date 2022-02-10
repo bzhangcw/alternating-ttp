@@ -8,7 +8,7 @@ from typing import *
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-
+import util_output as uo
 from Train import *
 from jsp.main import main_jsp
 from gurobipy import GRB
@@ -21,6 +21,7 @@ logger.setLevel(logging.INFO)
 initialize stations, sections, trains and train arcs
 '''
 station_list = []  # 实际车站列表
+station_name_map = {}  # 实际车站对应名
 v_station_list = []  # 时空网车站列表，车站一分为二 # 源节点s, 终结点t
 sec_times = {}  # total miles for stations
 miles = []
@@ -55,11 +56,18 @@ def read_intervals(path):
 
 
 def read_station(path, size):
-    global miles, v_station_list, station_list
-    df = pd.read_excel(path, engine='openpyxl').sort_values('站名')
+    global miles, v_station_list, station_list, station_name_map
+    df = pd.read_excel(
+        path,
+        engine='openpyxl',
+        dtype={"里程": np.float,
+               "站名": str,
+               "站全名": str
+               }
+    ).sort_values('里程')
     df = df.iloc[:size, :]
     miles = df['里程'].values
-    station_list = df['站名'].astype(str).to_list()
+    station_list = df['站名'].to_list()
     v_station_list.append('s_')
     for sta in station_list:
         if station_list.index(sta) != 0:  # 不为首站，有到达
@@ -67,6 +75,7 @@ def read_station(path, size):
         if station_list.index(sta) != len(station_list) - 1:
             v_station_list.append(sta + '_')  # 不为尾站，又出发
     v_station_list.append('_t')
+    station_name_map = {**df.set_index('站名')['站全名'].to_dict(), **df.set_index('站全名')['站名'].to_dict()}
 
 
 def read_section(path):
@@ -171,10 +180,10 @@ def update_node_occupy_dict(node_occupy_dict, opt_path_LR, option="lagrange", al
             node_occupy_dict[node] += 1
     elif option == "pdhg":
         for node in opt_path_LR[1:-1]:  # z_{j v}
-            node_occupy_dict[node] += 1 + alpha*(1 - (node in train.opt_path_LR_prev_dict))
+            node_occupy_dict[node] += 1 + alpha * (1 - (node in train.opt_path_LR_prev_dict))
     else:
         raise ValueError(f"option {option} is not supported")
-        
+
 
 def update_step_size(params_subgrad, method="polyak"):
     global subgradient_dict, UB, LB
@@ -185,7 +194,8 @@ def update_step_size(params_subgrad, method="polyak"):
             logger.info("switch to constant step size")
             params_subgrad.alpha = 0.5 / 20
     elif method == "polyak":
-        params_subgrad.alpha = params_subgrad.kappa * (UB[-1] - LB[-1]) / np.linalg.norm(
+        params_subgrad.alpha = params_subgrad.kappa * (
+                params_subgrad.ub_arr[-1] - params_subgrad.lb_arr[-1]) / np.linalg.norm(
             list(subgradient_dict.values())) ** 2
     else:
         raise ValueError(f"undefined method {method}")
@@ -236,7 +246,13 @@ def check_dual_feasibility(subgradient_dict, multiplier, train_list, LB):
     assert dual_cost == dual_cost_2 + lambda_mul_subg
 
 
-def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="seq"):
+def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp"):
+    """
+    produce path: iterable of (station, time)
+
+    Args:
+        method: the name of primal feasible algorithm.
+    """
     # if method == "seq":
     # feasible solutions
     path_cost_feasible = 0
@@ -245,6 +261,7 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="seq"):
     incompatible_arcs = set()
     count = 0
     not_feasible_trains = []
+    feasible_provider = 'seq'
     for idx, train in enumerate(sorted(train_list, key=lambda tr: tr.opt_cost_LR, reverse=True)):
         train.update_primal_graph(occupied_nodes, occupied_arcs, incompatible_arcs, safe_int)
 
@@ -269,37 +286,77 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="seq"):
         path_method = "primal"
         max_iter = 30
         if not jsp_init:
-            model, theta_aa, theta_ap, theta_pa, theta_pp, theta_dd, theta_dp, theta_pd, x_var = main_jsp()
-            buffer.extend([model, theta_aa, theta_ap, theta_pa, theta_pp, theta_dd, theta_dp, theta_pd, x_var])
+            # @update, add d_var, a_var
+            model, theta_aa, theta_ap, theta_pa, theta_pp, theta_dd, theta_dp, theta_pd, x_var, d_var, a_var, *_ = main_jsp()
+            buffer.extend(
+                [model, theta_aa, theta_ap, theta_pa, theta_pp, theta_dd, theta_dp, theta_pd, x_var, d_var, a_var])
             buffer = tuple(buffer)
         else:
-            model, theta_aa, theta_ap, theta_pa, theta_pp, theta_dd, theta_dp, theta_pd, x_var = buffer
+            model, theta_aa, theta_ap, theta_pa, theta_pp, theta_dd, theta_dp, theta_pd, x_var, d_var, a_var, *_ = buffer
         train_order, overtaking_dict = from_train_path_to_train_order(train_list, method=path_method)
         if path_method == "primal":
             fix_x_constrs = fix_train_at_station(model, x_var, [trn for trn in train_list if trn.is_feasible])
-        fix_train_order_at_station(model, train_order, safe_int, overtaking_dict, theta_aa, theta_ap, theta_pa, theta_pp, theta_dd, theta_dp, theta_pd)
+        fix_train_order_at_station(model, train_order, safe_int, overtaking_dict, theta_aa, theta_ap, theta_pa,
+                                   theta_pp, theta_dd, theta_dp, theta_pd)
         model.setParam(GRB.Param.TimeLimit, 600)  # 找到可行解就停止求解并返回
+        # model.setParam(GRB.Param.SolutionLimit, 1)  # 找到可行解就停止求解并返回
         model.optimize()
         if model.status == GRB.INFEASIBLE:
-            IIS_resolve(model, max_iter)
-            model.write("ttp.ilp")
+            # todo, fix this
+            # IIS_resolve(model, max_iter)
+            # model.write("ttp.ilp")
+            pass
         model.remove(getConstrByPrefix(model, "headway_fix"))  # remove added headway fix constraints
         if path_method == "primal":
             model.remove(fix_x_constrs)
+        if model.status not in [GRB.INF_OR_UNBD, GRB.INFEASIBLE, GRB.UNBOUNDED]:
+            jsp_count = 0
+            d_sol = {tr: {s: v.x for s, v in vl.items()} for tr, vl in d_var.items() if x_var[tr].x == 1}
+            a_sol = {tr: {s: v.x for s, v in vl.items()} for tr, vl in a_var.items() if x_var[tr].x == 1}
+
+            for tr in train_list:
+                trid = tr.traNo
+                if not trid in d_sol:
+                    continue
+                _arr = a_sol[trid]
+                _dep = d_sol[trid]
+
+                # tr.create_feasible_by_time(a_sol[tridx], d_sol[tridx])
+                def _gen_path(_arr, _dep):
+                    yield 's_', -1
+                    for s, t in _arr.items():
+                        yield f"_{s}", t - 360
+                        yield f"{s}_", _dep[s] - 360
+                    yield '_t', -1
+
+                tr.feasible_path_jsp = list(_gen_path(_arr, _dep))
+                jsp_count += 1
+            # if jsp is better.
+            if jsp_count > count:
+                count = jsp_count
+                for tr in train_list:
+                    tr.feasible_path = tr.feasible_path_jsp
+                feasible_provider = 'jsp'
+
     elif method == "seq":
         pass
     else:
         raise TypeError(f"method has no wrong type: {method}")
 
-    return path_cost_feasible, count, not_feasible_trains, buffer
+    return feasible_provider, path_cost_feasible, count, not_feasible_trains, buffer
 
 
 if __name__ == '__main__':
 
-    station_size = int(os.environ.get('station_size', 29))
-    train_size = int(os.environ.get('train_size', 80))
-    time_span = int(os.environ.get('time_span', 500))
-    iter_max = int(os.environ.get('iter_max', 100))
+    params_sys = SysParams()
+    station_size = params_sys.station_size = int(os.environ.get('station_size', 29))
+    train_size = params_sys.train_size = int(os.environ.get('train_size', 80))
+    time_span = params_sys.time_span = int(os.environ.get('time_span', 500))
+    iter_max = params_sys.iter_max = int(os.environ.get('iter_max', 100))
+    # create result-folder.
+    subdir_result = params_sys.subdir_result = datetime.datetime.now().strftime('%y%m%d-%H%M')
+    fdir_result = params_sys.fdir_result = f"result/{subdir_result}"
+    os.makedirs(fdir_result, exist_ok=True)
     logger.info(f"size: #train,#station,#timespan,#iter_max: {train_size, station_size, time_span, iter_max}")
     read_station('raw_data/1-station.xlsx', station_size)
     read_station_stop_start_addtime('raw_data/2-station-extra.xlsx')
@@ -311,10 +368,6 @@ if __name__ == '__main__':
     '''
     initialization
     '''
-    # create result-founder.
-    subdir_result = datetime.datetime.now().strftime('%y%m%d-%H%M')
-    fdir_result = f"result/{subdir_result}"
-    os.makedirs(fdir_result, exist_ok=True)
     logger.info("reading finish")
     logger.info("step 1")
     initialize_node_precedence()
@@ -330,8 +383,6 @@ if __name__ == '__main__':
     '''
     Lagrangian relaxation approach
     '''
-    LB = []
-    UB = []
 
     params_subgrad = SubgradParam()
 
@@ -345,6 +396,7 @@ if __name__ == '__main__':
     minGap = 0.1
     time_start = time.time()
     jsp_init = False
+    path_cost_feasible = 1e6
     buffer = []
     while params_subgrad.gap > minGap and params_subgrad.iter < iter_max:
         time_start_iter = time.time()
@@ -368,9 +420,6 @@ if __name__ == '__main__':
 
         update_subgradient_dict(subgradient_dict, node_occupy_dict)
 
-        lb = path_cost_LR - sum(multiplier.values())
-        params_subgrad.update_bound(lb)
-        LB.append(lb)
         logger.info(f"dual subproblems finished")
 
         if params_subgrad.iter % interval_primal != 0:  # or iter == iter_max - 1:
@@ -378,9 +427,15 @@ if __name__ == '__main__':
         else:
             logger.info("primal stage begins")
             # feasible solutions
-            path_cost_feasible, count, not_feasible_trains, buffer = primal_heuristic(train_list, safe_int, jsp_init, buffer, method=params_subgrad.primal_heuristic_method)
+            feasible_provider, path_cost_feasible, count, not_feasible_trains, buffer = primal_heuristic(
+                train_list,
+                safe_int,
+                jsp_init,
+                buffer,
+                method=params_subgrad.primal_heuristic_method
+            )
+            params_subgrad.feasible_provider = feasible_provider
             jsp_init = True
-            UB.append(path_cost_feasible)
             logger.info(f"maximum cardinality of feasible paths: {count}")
             logger.info(f"infeasible trains: {not_feasible_trains}")
             logger.info("primal stage finished")
@@ -388,103 +443,37 @@ if __name__ == '__main__':
             # update best primal solution
             if count > max_number:
                 logger.info("best primal solution updated")
-                max_number = count
+                params_subgrad.max_number = max_number = count
                 for idx, train in enumerate(train_list):
                     train.best_path = train.feasible_path
                     train.is_best_feasible = train.is_feasible
+                    if not train.is_best_feasible:
+                        continue
+                    for node in train.best_path:
+                        train.timetable[node[0]] = node[1]
+                uo.plot_timetables(train_list, miles, station_list, param_sys=params_sys, param_subgrad=params_subgrad)
 
         # check feasibility
         # check_dual_feasibility(subgradient_dict, multiplier, train_list, LB)
+        lb = path_cost_LR - sum(multiplier.values())
+        params_subgrad.update_bound(lb)
+        params_subgrad.update_incumbent(path_cost_feasible)
+        params_subgrad.update_gap()
 
         # update lagrangian multipliers
         update_step_size(params_subgrad, method='polyak')
         update_lagrangian_multipliers(params_subgrad.alpha, subgradient_dict)
 
         params_subgrad.iter += 1
-        params_subgrad.gap = (UB[-1] - LB[-1]) / (abs(UB[-1]) + 1e-3)
 
         if params_subgrad.iter % interval == 0:
             logger.info(f"subgrad params: {params_subgrad.__dict__}")
             time_end_iter = time.time()
             logger.info(
-                f"time:{time_end_iter - time_start:.3e}/{time_end_iter - time_start_iter:.2f}, iter#: {params_subgrad.iter:.2e}, step:{params_subgrad.alpha:.4f}, gap: {params_subgrad.gap:.2%} @[{lb:.3e} - {UB[-1]:.3e}]")
-
-    get_train_timetable_from_result()
-
-    '''
-    draw timetable
-    '''
-    plt.rcParams['figure.figsize'] = (18.0, 9.0)
-    # plt.rcParams["font.family"] = 'Times'
-    plt.rcParams["font.size"] = 9
-    fig = plt.figure(dpi=200)
-    color_value = {
-        '0': 'midnightblue',
-        '1': 'mediumblue',
-        '2': 'c',
-        '3': 'orangered',
-        '4': 'm',
-        '5': 'fuchsia',
-        '6': 'olive'
-    }
-
-    xlist = []
-    ylist = []
-    for i in range(len(train_list)):
-        train = train_list[i]
-        xlist = []
-        ylist = []
-        if not train.is_best_feasible:
-            continue
-        for sta_id in range(len(train.staList)):
-            sta = train.staList[sta_id]
-            if sta_id != 0:  # 不为首站, 有到达
-                if "_" + sta in train.v_staList:
-                    xlist.append(train.timetable["_" + sta])
-                    ylist.append(miles[station_list.index(sta)])
-            if sta_id != len(train.staList) - 1:  # 不为末站，有出发
-                if sta + "_" in train.v_staList:
-                    xlist.append(train.timetable[sta + "_"])
-                    ylist.append(miles[station_list.index(sta)])
-        plt.plot(xlist, ylist, color=color_value[str(i % 7)], linewidth=1.5)
-        plt.text(xlist[0] + 0.8, ylist[0] + 4, train.traNo, ha='center', va='bottom',
-                 color=color_value[str(i % 7)], weight='bold', family='Times', fontsize=9)
-
-    plt.grid(True)  # show the grid
-    plt.ylim(0, miles[-1])  # y range
-
-    plt.xlim(0, time_span)  # x range
-    sticks = 20
-    plt.xticks(np.linspace(0, time_span, sticks))
-
-    plt.yticks(miles, station_list, family='Times')
-    plt.xlabel('Time (min)', family='Times new roman')
-    plt.ylabel('Space (km)', family='Times new roman')
-    plt.title(f"Best primal solution of # trains, station, periods: ({len(train_list)}, {station_size}, {time_span})\n"
-              f"Number of trains {max_number}", fontdict={"weight": 500, "size": 20})
-
-    plt.savefig(f"{fdir_result}/lagrangian-{train_size}.{station_size}.{time_span}.png", dpi=500)
+                f"time:{time_end_iter - time_start:.3e}/{time_end_iter - time_start_iter:.2f}, iter#: {params_subgrad.iter:.2e}, step:{params_subgrad.alpha:.4f}, gap: {params_subgrad.gap:.2%} @[{params_subgrad.lb_arr[-1]:.3e} - {params_subgrad.ub_arr[-1]:.3e}]"
+            )
 
     end_time = time.time()
     time_elapsed = end_time - start_time
-    print(time_elapsed)
-
-    plt.clf()
-    ## plot the bound updates
-    font_dic = {
-        "family": "Times",
-        "style": "oblique",
-        "weight": "normal",
-        "color": "green",
-        "size": 20
-    }
-    logger.info(f"# of iterations {len(LB)}")
-    x_cor = range(1, len(LB) + 1)
-    plt.plot(x_cor, LB, label='LB')
-    plt.plot(x_cor, UB, label='UB')
-    plt.legend()
-    plt.xlabel('Iteration', fontdict=font_dic)
-    plt.ylabel('Bounds update', fontdict=font_dic)
-    plt.title('LR: Bounds updates \n', fontsize=23)
-    plt.savefig(f"{fdir_result}/lagrangian-{train_size}.{station_size}.{time_span}.convergence.png", dpi=500)
-    # plt.show()
+    logger.info(f"# of iterations {params_subgrad.iter} in {time_elapsed: .3e} seconds")
+    uo.plot_convergence(param_sys=params_sys, param_subgrad=params_subgrad)

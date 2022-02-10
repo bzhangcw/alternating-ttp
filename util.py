@@ -1,8 +1,10 @@
 """
 utility modules
 """
+import logging
 from collections import defaultdict
 from itertools import combinations
+
 from gurobipy import GRB
 
 from constr_verification import getConstrByPrefix
@@ -29,6 +31,9 @@ safe_int = {}
 # arrival-arrival headway and departure-departure headway
 eps = 5
 
+_grb_logger = logging.getLogger("gurobipy.gurobipy")
+_grb_logger.setLevel(logging.ERROR)
+
 
 # global graph generation id.
 class GraphCounter(object):
@@ -44,6 +49,11 @@ class GraphCounter(object):
 gc = GraphCounter()
 
 
+class SysParams(object):
+    # todo, support ArgumentParser
+    pass
+
+
 # subgradient params
 class SubgradParam(object):
 
@@ -56,9 +66,12 @@ class SubgradParam(object):
         self.eps_num_stuck = 3
         self.iter = 0
         self.lb = 1e-6
+        self.lb_arr = [-1e6]
+        self.ub_arr = [1e6]
         self.gap = 1
         self.dual_method = "pdhg"  # "lagrange" or "pdhg"
-        self.primal_heuristic_method = "seq"  # "jsp" or "seq"
+        self.primal_heuristic_method = "jsp"  # "jsp" or "seq"
+        self.feasible_provider = "jsp"  # "jsp" or "seq"
 
     def update_bound(self, lb):
         if lb >= self.lb:
@@ -72,6 +85,15 @@ class SubgradParam(object):
         if self.num_stuck >= self.eps_num_stuck:
             self.kappa *= 0.5
             self.num_stuck = 0
+        self.lb_arr.append(lb)
+
+    def update_incumbent(self, ub):
+        self.ub_arr.append(ub)
+
+    def update_gap(self):
+        _best_ub = min(self.ub_arr)
+        _best_lb = max(self.lb_arr)
+        self.gap = (_best_ub - _best_lb) / (abs(_best_lb) + 1e-3)
 
 
 def from_train_path_to_train_order(train_list, method="dual"):
@@ -100,53 +122,68 @@ def from_train_path_to_train_order(train_list, method="dual"):
     return train_order, overtaking_dict
 
 
-def fix_train_order_at_station(model, train_order, safe_int, overtaking_dict, theta_aa, theta_ap, theta_pa, theta_pp, theta_dd, theta_dp, theta_pd):
+def fix_train_order_at_station(model, train_order, safe_int, overtaking_dict, theta_aa, theta_ap, theta_pa, theta_pp,
+                               theta_dd, theta_dp, theta_pd):
     for v_station, order in train_order.items():
         station = v_station.replace("_", "")
         for i, (train, t) in enumerate(order):
             if v_station.endswith("_"):  # only consider dp dd pd pp
                 if train.v_sta_type[v_station] == "s":
                     # dd
-                    model.addConstrs((theta_dd[station][train.traNo][train_after.traNo] == 1 for train_after, t_after in order[i:]
-                                      if train_after.v_sta_type[v_station] == "s"
-                                      and (train.traNo, train_after.traNo) not in overtaking_dict
-                                      and t_after - t >= safe_int["ss"][station, train_after.speed]), name=f"headway_fix_dd[{train.traNo}]")
+                    model.addConstrs(
+                        (theta_dd[station][train.traNo][train_after.traNo] == 1 for train_after, t_after in order[i:]
+                         if train_after.v_sta_type[v_station] == "s"
+                         and (train.traNo, train_after.traNo) not in overtaking_dict
+                         and t_after - t >= safe_int["ss"][station, train_after.speed]),
+                        name=f"headway_fix_dd[{train.traNo}]")
                     # dp
-                    model.addConstrs((theta_dp[station][train.traNo][train_after.traNo] == 1 for train_after, t_after in order[i:]
-                                      if train_after.v_sta_type[v_station] == "p"
-                                      and (train.traNo, train_after.traNo) not in overtaking_dict
-                                      and t_after - t >= safe_int["sp"][station, train_after.speed]), name=f"headway_fix_dp[{train.traNo}]")
+                    model.addConstrs(
+                        (theta_dp[station][train.traNo][train_after.traNo] == 1 for train_after, t_after in order[i:]
+                         if train_after.v_sta_type[v_station] == "p"
+                         and (train.traNo, train_after.traNo) not in overtaking_dict
+                         and t_after - t >= safe_int["sp"][station, train_after.speed]),
+                        name=f"headway_fix_dp[{train.traNo}]")
                 elif train.v_sta_type[v_station] == "p":
                     # pd
-                    model.addConstrs((theta_pd[station][train.traNo][train_after.traNo] == 1 for train_after, t_after in order[i:]
-                                      if train_after.v_sta_type[v_station] == "s"
-                                      and (train.traNo, train_after.traNo) not in overtaking_dict
-                                      and t_after - t >= safe_int["ps"][station, train_after.speed]), name=f"headway_fix_pd[{train.traNo}]")
+                    model.addConstrs(
+                        (theta_pd[station][train.traNo][train_after.traNo] == 1 for train_after, t_after in order[i:]
+                         if train_after.v_sta_type[v_station] == "s"
+                         and (train.traNo, train_after.traNo) not in overtaking_dict
+                         and t_after - t >= safe_int["ps"][station, train_after.speed]),
+                        name=f"headway_fix_pd[{train.traNo}]")
                 else:
                     raise TypeError(f"train:{train} has the wrong virtual station type: {train.v_sta_type[v_station]}")
             elif v_station.startswith("_"):  # only consider ap aa pa
                 if train.v_sta_type[v_station] == "a":
                     # aa
-                    model.addConstrs((theta_aa[station][train.traNo][train_after.traNo] == 1 for train_after, t_after in order[i:]
-                                      if train_after.v_sta_type[v_station] == "a"
-                                      and (train.traNo, train_after.traNo) not in overtaking_dict
-                                      and t_after - t >= safe_int["aa"][station, train_after.speed]), name=f"headway_fix_aa[{train.traNo}]")
+                    model.addConstrs(
+                        (theta_aa[station][train.traNo][train_after.traNo] == 1 for train_after, t_after in order[i:]
+                         if train_after.v_sta_type[v_station] == "a"
+                         and (train.traNo, train_after.traNo) not in overtaking_dict
+                         and t_after - t >= safe_int["aa"][station, train_after.speed]),
+                        name=f"headway_fix_aa[{train.traNo}]")
                     # ap
-                    model.addConstrs((theta_ap[station][train.traNo][train_after.traNo] == 1 for train_after, t_after in order[i:]
-                                      if train_after.v_sta_type[v_station] == "p"
-                                      and (train.traNo, train_after.traNo) not in overtaking_dict
-                                      and t_after - t >= safe_int["ap"][station, train_after.speed]), name=f"headway_fix_ap[{train.traNo}]")
+                    model.addConstrs(
+                        (theta_ap[station][train.traNo][train_after.traNo] == 1 for train_after, t_after in order[i:]
+                         if train_after.v_sta_type[v_station] == "p"
+                         and (train.traNo, train_after.traNo) not in overtaking_dict
+                         and t_after - t >= safe_int["ap"][station, train_after.speed]),
+                        name=f"headway_fix_ap[{train.traNo}]")
                 elif train.v_sta_type[v_station] == "p":
                     # pa
-                    model.addConstrs((theta_pa[station][train.traNo][train_after.traNo] == 1 for train_after, t_after in order[i:]
-                                      if train_after.v_sta_type[v_station] == "a"
-                                      and (train.traNo, train_after.traNo) not in overtaking_dict
-                                      and t_after - t >= safe_int["pa"][station, train_after.speed]), name=f"headway_fix_pa[{train.traNo}]")
+                    model.addConstrs(
+                        (theta_pa[station][train.traNo][train_after.traNo] == 1 for train_after, t_after in order[i:]
+                         if train_after.v_sta_type[v_station] == "a"
+                         and (train.traNo, train_after.traNo) not in overtaking_dict
+                         and t_after - t >= safe_int["pa"][station, train_after.speed]),
+                        name=f"headway_fix_pa[{train.traNo}]")
                     # pp
-                    model.addConstrs((theta_pp[station][train.traNo][train_after.traNo] == 1 for train_after, t_after in order[i:]
-                                      if train_after.v_sta_type[v_station] == "p"
-                                      and (train.traNo, train_after.traNo) not in overtaking_dict
-                                      and t_after - t >= safe_int["pp"][station, train_after.speed]), name=f"headway_fix_pp[{train.traNo}]")
+                    model.addConstrs(
+                        (theta_pp[station][train.traNo][train_after.traNo] == 1 for train_after, t_after in order[i:]
+                         if train_after.v_sta_type[v_station] == "p"
+                         and (train.traNo, train_after.traNo) not in overtaking_dict
+                         and t_after - t >= safe_int["pp"][station, train_after.speed]),
+                        name=f"headway_fix_pp[{train.traNo}]")
                 else:
                     raise TypeError(f"train:{train} has the wrong virtual station type: {train.v_sta_type[v_station]}")
             else:

@@ -62,7 +62,8 @@ def main_jsp():
         add_safe_cons(model, x_var, station_list, stop_trains, pass_trains, A_var, D_var, aa_speed, dd_speed, pp_speed, ap_speed, pa_speed, dp_speed, pd_speed, args.M)
     model.setParam('MIPFocus', 1)  # 专注于可行解
 
-    return model, theta_aa, theta_ap, theta_pa, theta_pp, theta_dd, theta_dp, theta_pd, x_var
+    return model, theta_aa, theta_ap, theta_pa, theta_pp, theta_dd, theta_dp, theta_pd, x_var, \
+           D_var, A_var
     # 模型求解
     # model.optimize()
     #
