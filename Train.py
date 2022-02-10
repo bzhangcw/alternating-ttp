@@ -45,8 +45,10 @@ class Train(object):
         self.opt_cost_LR = 0
         self.opt_cost_LR_normal = 0
         self.feasible_path = None  # 可行解中的最短路径
+        self.feasible_path_jsp = None  # 可行解中的最短路径
         self.last_feasible_path = None  # 上一个可行解的最短路径，用于置0
         self.feasible_cost = 0
+        self.feasible_provider = 'seq'
         self.timetable = {}  # 以virtual station为key，存int值
         self.speed = None  # 列车速度，300,350
         self.is_feasible = False
