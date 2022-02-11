@@ -484,7 +484,7 @@ if __name__ == '__main__':
 
         # check feasibility
         # check_dual_feasibility(subgradient_dict, multiplier, train_list, LB)
-        lb = path_cost_LR - sum(multiplier.values())
+        lb = path_cost_LR - sum(v for d in multiplier.values() for v in d.values())
         params_subgrad.update_bound(lb)
         params_subgrad.update_incumbent(path_cost_feasible)
         params_subgrad.update_gap()
