@@ -217,7 +217,7 @@ def update_step_size(params_subgrad, method="polyak"):
             params_subgrad.alpha = 0.5 / 20
     elif method == "polyak":
         subg_norm = np.linalg.norm([v for d in subgradient_dict.values() for v in d.values()]) ** 2
-        params_subgrad.alpha = params_subgrad.kappa * (UB[-1] - LB[-1]) / subg_norm
+        params_subgrad.alpha = params_subgrad.kappa * (params_subgrad.ub_arr[-1] - params_subgrad.lb_arr[-1]) / subg_norm
     else:
         raise ValueError(f"undefined method {method}")
 
