@@ -14,38 +14,40 @@ class Train:
         self.nodeOccupancy = {}  # 是否占用某节点，key为sta => t
         self.timetable = {}  # 以virtual station为key，存int值
         self.speed = None  # 列车速度，300,350
+        self.miles = None  # 列车车程
 
-    def decode_line_plan(self, g, h):
+    def decode_line_plan(self, g, h, miles):
         all_station_list = list(self.linePlan.keys())
+        # 获得出发站
         for station in all_station_list:
             if self.linePlan[station] in {-1, 1}:
                 self.depSta = station
                 break
+        # 获得终点站
         for station in all_station_list[::-1]:
             if self.linePlan[station] in {-1, 1}:
                 self.arrSta = station
                 break
-
+        # 获得列车车程
+        self.miles = miles[int(self.arrSta) - 1] - miles[int(self.depSta) - 1]
+        # 获得经停站（包括出发站和终点站）
         in_rail_flag = 0
         for station in all_station_list:
             if station == self.depSta:
                 in_rail_flag = 1
-
             if self.linePlan[station] == 1:
                 self.stopSta.append(station)
                 self.staList.append(station)
             if in_rail_flag == 1 and self.linePlan[station] in {0, -1}:
                 self.passSta.append(station)
                 self.staList.append(station)
-
             if station == self.arrSta:
                 in_rail_flag = 0
-
+        # 获得任意两站间的启停附加时分
         for station in self.staList:
             nextStation = str(int(station) + int(2 * self.up - 1))
             if nextStation not in self.staList:
                 break
-
             if self.linePlan[station] in {0, -1} and self.linePlan[nextStation] in {0, -1}:
                 self.delta[(station, nextStation)] = 0
             elif self.linePlan[station] in {0, -1} and self.linePlan[nextStation] == 1:

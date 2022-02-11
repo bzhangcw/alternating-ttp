@@ -308,17 +308,15 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp"):
         max_iter = 30
         if not jsp_init:
             # @update, add d_var, a_var
-            model, theta_aa, theta_ap, theta_pa, theta_pp, theta_dd, theta_dp, theta_pd, x_var, d_var, a_var, *_ = main_jsp()
-            buffer.extend(
-                [model, theta_aa, theta_ap, theta_pa, theta_pp, theta_dd, theta_dp, theta_pd, x_var, d_var, a_var])
+            model, theta, x_var, d_var, a_var, *_ = main_jsp()
+            buffer.extend([model, theta, x_var, d_var, a_var])
             buffer = tuple(buffer)
         else:
-            model, theta_aa, theta_ap, theta_pa, theta_pp, theta_dd, theta_dp, theta_pd, x_var, d_var, a_var, *_ = buffer
+            model, theta, x_var, d_var, a_var, *_ = buffer
         train_order, overtaking_dict = from_train_path_to_train_order(train_list, method=path_method)
         if path_method == "primal":
             fix_x_constrs = fix_train_at_station(model, x_var, [trn for trn in train_list if trn.is_feasible])
-        fix_train_order_at_station(model, train_order, safe_int, overtaking_dict, theta_aa, theta_ap, theta_pa,
-                                   theta_pp, theta_dd, theta_dp, theta_pd)
+        fix_train_order_at_station(model, train_order, safe_int, overtaking_dict, theta)
         model.setParam(GRB.Param.TimeLimit, 600)  # 找到可行解就停止求解并返回
         # model.setParam(GRB.Param.SolutionLimit, 1)  # 找到可行解就停止求解并返回
         model.optimize()

@@ -34,7 +34,7 @@ def read_section(path):
     return sec_times
 
 
-def parse_row_to_train(row, station_list, g, h):
+def parse_row_to_train(row, station_list, g, h, miles):
     tr = Train(str(int(row['车次ID'])))
     tr.preferred_time = row['偏好始发时间']
     tr.up = row['上下行']
@@ -44,11 +44,11 @@ def parse_row_to_train(row, station_list, g, h):
         tr.linePlan = {k: row[k] for k in station_list}
     elif tr.up == 0:  # from 29 to 1
         tr.linePlan = {k: row[k] for k in station_list[::-1]}
-    tr.decode_line_plan(g, h)
+    tr.decode_line_plan(g, h, miles)
     return tr
 
 
-def read_train(path, station_list, g, h):
+def read_train(path, station_list, g, h, miles):
     """
     return train_list
 
@@ -56,7 +56,7 @@ def read_train(path, station_list, g, h):
     """
     df = pd.read_excel(path)
     df = df.rename(columns={k: str(k) for k in df.columns})
-    train_series = df.apply(lambda row: parse_row_to_train(row, station_list, g, h), axis=1)
+    train_series = df.apply(lambda row: parse_row_to_train(row, station_list, g, h, miles), axis=1)
     train_list = train_series.to_list()
     return train_list
 

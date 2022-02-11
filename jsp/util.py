@@ -48,6 +48,7 @@ def get_stop_pass_trains(station_list, train_list):
 
 
 def assign_high_level_train(train_list, sec_times, wait_time_lb, wait_time_ub, TimeSpan=1080, TimeStart=360):
+    train_list.sort(key=lambda trn: trn.preferred_time)
 
     D_var = {}
     A_var = {}
@@ -55,7 +56,7 @@ def assign_high_level_train(train_list, sec_times, wait_time_lb, wait_time_ub, T
     high_train_list = [trn for trn in train_list if trn.standard == 1]
 
     for i in range(len(high_train_list)):
-        train = high_train_list[i]
+        train = train_list[i]
 
         D_var[train] = {}
         A_var[train] = {}
@@ -72,11 +73,12 @@ def assign_high_level_train(train_list, sec_times, wait_time_lb, wait_time_ub, T
             nextStation = str(int(station) + int(2 * train.up - 1))
             if train.up == 1:
                 A_var[train][nextStation] = D_var[train][station] + sec_times[train.speed][
-                    (station, nextStation)] + train.delta[(station, nextStation)]
+                    (station, str(int(station) + int(2 * train.up - 1)))] + train.delta[
+                                                (station, str(int(station) + int(2 * train.up - 1)))]
             elif train.up == 0:
                 A_var[train][nextStation] = D_var[train][station] + sec_times[train.speed][
-                    (nextStation, station)] + train.delta[(station, nextStation)]
-
+                    (str(int(station) + int(2 * train.up - 1)), station)] + train.delta[
+                                                (station, str(int(station) + int(2 * train.up - 1)))]
         D_var[train][train.arrSta] = A_var[train][train.arrSta]
 
     assigned_train_list = []
@@ -91,11 +93,15 @@ def assign_high_level_train(train_list, sec_times, wait_time_lb, wait_time_ub, T
 
     return assigned_train_list, D_var, A_var
 
+def gen_sub_train_list(train_list, interval_list):
+    """
+    :param:
+    
+    interval_list should be a list of tuples, where the i-th tuple is (begin_{i}, end_{i})
+    """
 
-def run_once(f):
-    def wrapper(*args, **kwargs):
-        if not wrapper.has_run:
-            wrapper.has_run = True
-            return f(*args, **kwargs)
-    wrapper.has_run = False
-    return wrapper
+    select_train_list = []
+    for interval in interval_list:
+        select_train_list = select_train_list + train_list[interval[0] : interval[1]]
+
+    return select_train_list
