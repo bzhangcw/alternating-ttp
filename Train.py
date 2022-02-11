@@ -323,7 +323,7 @@ class Train(object):
         """
         rebuild current price/multiplier to cal shortest path
         """
-        self.opt_path_LR_dict = {node: None for Node in self.opt_path_LR}
+        self.opt_path_LR_dict = {node: None for node in self.opt_path_LR}
         subg = self.subgraph
         if option == "lagrange":
             price = [(i, j,
