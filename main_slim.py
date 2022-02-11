@@ -387,6 +387,8 @@ if __name__ == '__main__':
     train_size = params_sys.train_size = int(os.environ.get('train_size', 80))
     time_span = params_sys.time_span = int(os.environ.get('time_span', 500))
     iter_max = params_sys.iter_max = int(os.environ.get('iter_max', 100))
+    primal = os.environ.get('primal', 'jsp')
+    dual = os.environ.get('dual', 'pdhg')
     # create result-folder.
     subdir_result = params_sys.subdir_result = datetime.datetime.now().strftime('%y%m%d-%H%M')
     fdir_result = params_sys.fdir_result = f"result/{subdir_result}"
@@ -419,6 +421,8 @@ if __name__ == '__main__':
     '''
 
     params_subgrad = SubgradParam()
+    params_subgrad.dual_method = dual
+    params_subgrad.primal_heuristic_method = primal
 
     interval = 1
     interval_primal = 1
