@@ -60,7 +60,7 @@ def read_station(path, size):
     df = pd.read_excel(
         path,
         engine='openpyxl',
-        dtype={"里程": np.float,
+        dtype={"里程": np.float64,
                "站名": str,
                "站全名": str
                }

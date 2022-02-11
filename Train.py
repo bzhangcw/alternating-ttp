@@ -323,7 +323,7 @@ class Train(object):
         """
         rebuild current price/multiplier to cal shortest path
         """
-        self.opt_path_LR_dict = {node: None for Node in self.opt_path_LR}
+        self.opt_path_LR_dict = {node: None for node in self.opt_path_LR}
         subg = self.subgraph
         if option == "lagrange":
             price = [(i, j, {'price': v['weight'] + xa_map[i, j][self.traNo] * yv_multiplier[j], 
@@ -331,7 +331,7 @@ class Train(object):
                      for i, j, v in subg.edges(data=True)]
         elif option == "pdhg":
             price = [(i, j, {'price': v['weight'] + xa_map[i, j][self.traNo] * yv_multiplier[j] + gamma * (0.5 - ((i, j) in self.opt_path_LR_dict)), 
-                             'multiplier': xa_map[i, j][self.traNo] * yv_multiplier[j]}) + gamma * (0.5 - ((i, j) in self.opt_path_LR_dict))
+                             'multiplier': xa_map[i, j][self.traNo] * yv_multiplier[j] + gamma * (0.5 - ((i, j) in self.opt_path_LR_dict))})
                      for i, j, v in subg.edges(data=True)]
         else:
             raise ValueError(f"option {option} is not supported")
