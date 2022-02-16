@@ -433,8 +433,10 @@ if __name__ == '__main__':
     read_station_stop_start_addtime('raw_data/2-station-extra.xlsx')
     read_section('raw_data/3-section-time.xlsx')
     read_dwell_time('raw_data/4-dwell-time.xlsx')
-    read_train('raw_data/7-lineplan-up.xlsx', train_size, time_span)
-    # read_train('raw_data/6-lineplan-down.xlsx', train_size, time_span)
+    if params_sys.up:
+        read_train('raw_data/7-lineplan-up.xlsx', train_size, time_span)
+    else:
+        read_train('raw_data/6-lineplan-down.xlsx', train_size, time_span)
     read_intervals('raw_data/5-safe-intervals.xlsx')
 
     '''
