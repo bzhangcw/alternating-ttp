@@ -2,7 +2,6 @@
 output utilities
 """
 
-
 from typing import *
 
 import matplotlib.pyplot as plt
@@ -75,8 +74,50 @@ def read_timetable_csv(fpath, st=None, station_name_map=None):
     return df, train_paths
 
 
-def plot_timetables(train_list, miles, station_list, param_sys: SysParams, param_subgrad: SubgradParam, selective: List=None):
+def plot_timetables_h5(train_list, miles, station_list, param_sys: SysParams, param_subgrad: SubgradParam,
+                       selective: List = None):
+    import plotly.graph_objects as go
 
+    fig = go.Figure(layout=go.Layout(
+        title=f"Best primal solution of # trains, station, periods: ({len(train_list)}, {param_sys.station_size}, {param_sys.time_span})\n"
+              f"Number of trains {param_subgrad.max_number}")
+    )
+    for i in range(len(train_list)):
+        train = train_list[i]
+        if selective is not None and train.traNo not in selective:
+            continue
+        xlist = []
+        ylist = []
+        if not train.is_best_feasible:
+            continue
+        for sta_id in range(len(train.staList)):
+            sta = train.staList[sta_id]
+            if sta_id != 0:  # 不为首站, 有到达
+                if "_" + sta in train.v_staList:
+                    xlist.append(train.timetable["_" + sta])
+                    ylist.append(miles[station_list.index(sta)])
+            if sta_id != len(train.staList) - 1:  # 不为末站，有出发
+                if sta + "_" in train.v_staList:
+                    xlist.append(train.timetable[sta + "_"])
+                    ylist.append(miles[station_list.index(sta)])
+        fig.add_scatter(
+            mode='lines+markers',
+            x=xlist, y=ylist,
+            line={"dash": "solid"},
+            name=f"train-{train.traNo}:{train.speed}",
+        )
+    fig.update_xaxes(title="minutes",
+                     tickvals=np.arange(0, param_sys.time_span, param_sys.time_span / 30).round(2))
+    fig.update_yaxes(title="miles",
+                     tickvals=miles)
+
+    fig.write_html(
+        f"{param_sys.fdir_result}/{param_subgrad.dual_method}.{param_subgrad.feasible_provider}@{param_subgrad.iter}-{param_sys.train_size}.{param_sys.station_size}.{param_sys.time_span}.html",
+    )
+
+
+def plot_timetables(train_list, miles, station_list, param_sys: SysParams, param_subgrad: SubgradParam,
+                    selective: List = None):
     for i in range(len(train_list)):
         train = train_list[i]
         if selective is not None and train.traNo not in selective:

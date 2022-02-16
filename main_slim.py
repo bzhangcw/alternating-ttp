@@ -36,7 +36,7 @@ start_addTime = {}
 
 
 def read_intervals(path):
-    global safe_int
+    global safe_int, safe_int_df
     df = pd.read_excel(
         path, engine='openpyxl'
     ).rename(columns={
@@ -53,6 +53,7 @@ def read_intervals(path):
     ).set_index(['station', 'speed'])
 
     safe_int = df.to_dict()
+    safe_int_df = df
 
 
 def read_station(path, size):
@@ -84,11 +85,12 @@ def read_section(path):
     ).set_index("interval")
     global sec_times_all
     sec_300 = df[300].to_dict()
-    sec_350 = df[300].to_dict()
+    sec_350 = df[350].to_dict()
     sec_times_all = {
         300: {**sec_300, **{(k[-1], k[0]): v for k, v in sec_300.items()}},
         350: {**sec_350, **{(k[-1], k[0]): v for k, v in sec_350.items()}},
     }
+    return 1
 
 
 def parse_row_to_train(row, time_span=1080):
@@ -278,8 +280,7 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp", param
     Args:
         method: the name of primal feasible algorithm.
     """
-    # if method == "seq":
-    # feasible solutions
+
     __unused = args, kwargs
     path_cost_feasible = 0
     occupied_nodes = {}
@@ -327,19 +328,29 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp", param
             fix_x_constrs = fix_train_at_station(model, x_var, [trn for trn in train_list if trn.is_feasible])
         fix_train_order_at_station(model, train_order, safe_int, overtaking_dict, theta)
         model.setParam(GRB.Param.TimeLimit, 600)  # 找到可行解就停止求解并返回
-
         model.optimize()
+
         if model.status == GRB.INFEASIBLE:
             # todo, fix this
-            IIS_resolve(model, max_iter)
-            model.computeIIS()
-            model.write("ttp.ilp")
+            if params_sys.DBG:
+                for idx, train in enumerate(train_list):
+                    train.best_path = train.feasible_path
+                    train.is_best_feasible = train.is_feasible
+                    if not train.is_best_feasible:
+                        continue
+                    for node in train.best_path:
+                        train.timetable[node[0]] = node[1]
+                uo.plot_timetables_h5(train_list, miles, station_list, param_sys=params_sys,
+                                      param_subgrad=params_subgrad)
+                # IIS_resolve(model, max_iter)
+                model.computeIIS()
+                model.write("ttp.ilp")
             pass
 
         model.remove(getConstrByPrefix(model, "headway_fix"))  # remove added headway fix constraints
         if path_method == "primal":
             model.remove(fix_x_constrs)
-        if model.status not in [GRB.INF_OR_UNBD, GRB.INFEASIBLE, GRB.UNBOUNDED]:
+        if model.status not in [GRB.INF_OR_UNBD, GRB.INFEASIBLE, GRB.UNBOUNDED] and model.SolCount > 0:
             jsp_count = 0
             x_sol = {k: 1 if np.isreal(v) else v.x for k, v in x_var.items()}
             d_sol = {tr: {s: v.x for s, v in vl.items()} for tr, vl in d_var.items() if x_sol[tr] == 1}
@@ -400,12 +411,19 @@ def process_updata():
 if __name__ == '__main__':
 
     params_sys = SysParams()
-    station_size = params_sys.station_size = int(os.environ.get('station_size', 29))
-    train_size = params_sys.train_size = int(os.environ.get('train_size', 80))
-    time_span = params_sys.time_span = int(os.environ.get('time_span', 500))
-    iter_max = params_sys.iter_max = int(os.environ.get('iter_max', 100))
-    primal = os.environ.get('primal', 'jsp')
-    dual = os.environ.get('dual', 'pdhg')
+    params_subgrad = SubgradParam()
+
+    params_sys.parse_environ()
+    params_subgrad.parse_environ()
+
+    station_size = params_sys.station_size
+    train_size = params_sys.train_size
+    time_span = params_sys.time_span
+    iter_max = params_sys.iter_max
+
+    dual = params_subgrad.dual_method
+    primal = params_subgrad.primal_heuristic_method
+
     # create result-folder.
     subdir_result = params_sys.subdir_result = datetime.datetime.now().strftime('%y%m%d-%H%M')
     fdir_result = params_sys.fdir_result = f"result/{subdir_result}"
@@ -437,10 +455,6 @@ if __name__ == '__main__':
     '''
     Lagrangian relaxation approach
     '''
-
-    params_subgrad = SubgradParam()
-    params_subgrad.dual_method = dual
-    params_subgrad.primal_heuristic_method = primal
 
     interval = 1
     interval_primal = 1
@@ -503,7 +517,8 @@ if __name__ == '__main__':
                         continue
                     for node in train.best_path:
                         train.timetable[node[0]] = node[1]
-                uo.plot_timetables(train_list, miles, station_list, param_sys=params_sys, param_subgrad=params_subgrad)
+                uo.plot_timetables_h5(train_list, miles, station_list, param_sys=params_sys,
+                                      param_subgrad=params_subgrad)
 
         # check feasibility
         # check_dual_feasibility(subgradient_dict, multiplier, train_list, LB)
