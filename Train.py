@@ -21,6 +21,7 @@ class Train(object):
         :param dep_UB:
         '''
         self.traNo = traNo  # 列车车次
+        self.up = 1  # 1-down 0-up
         self.dep_LB = dep_LB  # 始发时间窗下界
         self.dep_UB = dep_UB  # 始发时间窗上界
         self.arcs = {}
@@ -38,7 +39,7 @@ class Train(object):
         self.v_sta_type = {}
         self.staList = []  # actual stations
         self.linePlan = {}  # 开行方案字典
-        self.opt_path_LR = [] # LR 中的最短路径
+        self.opt_path_LR = []  # LR 中的最短路径
         self.opt_path_LR_dict = None  # LR 最短路径作为dict
         self.opt_path_LR_prev = []  # 上一个迭代钟 LR 中的最短路径
         self.last_opt_path_LR = None
@@ -80,6 +81,12 @@ class Train(object):
         self._ig_t_primal = 0
         self.max_edge_weight = 0
 
+    def __hash__(self):
+        return self.traNo.__hash__()
+
+    def __eq__(self, other):
+        return self.traNo == other.traNo
+
     def __repr__(self):
         return "train" + str(self.traNo)
 
@@ -90,6 +97,8 @@ class Train(object):
         :return:
         '''
         all_station_list = list(self.linePlan.keys())
+        if self.up == 0:
+            all_station_list.reverse()
         for station in all_station_list:
             if self.linePlan[station] in {-1, 1}:
                 depSta = station
@@ -542,11 +551,11 @@ class Train(object):
         # i. get neighborhood size
         radius = {}
         for (i, t), c in occupied_nodes.items():
-            _type_affix = c + self.v_sta_type.get(i, '%')
-            if _type_affix in _safe_int:
-                radius[i, t] = _safe_int[_type_affix][i.strip("_"), self.speed]
-            else:
-                radius[i, t] = 0  # move the center only.
+            _type_affix_after = c + self.v_sta_type.get(i, '%')
+            _type_affix_before = self.v_sta_type.get(i, '%') + c
+            radius_after = _safe_int[_type_affix_after][i.strip("_"), self.speed] if _type_affix_after in _safe_int else 0
+            radius_before = _safe_int[_type_affix_before][i.strip("_"), self.speed] if _type_affix_before in _safe_int else 0  # todo: use speed of rear train
+            radius[i, t] = (radius_before, radius_after)
         # ii. then remove nodes defined by radius
         _all_nodes = ((i, t + dlt) for (i, t), r in radius.items() for dlt in range(-r, r + 1))
         _ig_all_nodes = [self._ig_nodes_id[n] for n in _all_nodes if n in self._ig_nodes]

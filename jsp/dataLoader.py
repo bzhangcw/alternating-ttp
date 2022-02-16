@@ -1,6 +1,7 @@
 import pandas as pd
 
 from jsp.Train import Train
+from jsp.util import time2num
 
 
 def read_station(path):
@@ -35,7 +36,7 @@ def read_section(path):
 
 
 def parse_row_to_train(row, station_list, g, h, miles):
-    tr = Train(str(int(row['车次ID'])))
+    tr = Train(int(row['车次ID']))
     tr.preferred_time = row['偏好始发时间']
     tr.up = row['上下行']
     tr.standard = row['标杆车']
@@ -119,3 +120,38 @@ def read_safe_interval(path):
         pd_speed[speed] = df_speed['通发安全间隔'].to_dict()
 
     return aa_speed, dd_speed, pp_speed, ap_speed, pa_speed, dp_speed, pd_speed
+
+
+def read_train_table(path, up=0, encoding='gbk'):
+    # 站名 up=1
+    station_name_list = ['北京南', '廊坊', '京津线路所', '津沪线路所', '天津南', '沧州西', '德州东', '济南西', '崔马庄线路所', '泰安',
+                         '曲阜东', '滕州东', '枣庄', '徐州东', '宿州东', '蚌埠南', '定远', '滁州', '扬州线路所', '南京南',
+                         '秦淮河线路所', '镇江南', '丹阳北', '常州北', '无锡东', '苏州北', '昆山南', '黄渡线路所', '上海虹桥']
+
+    df = pd.read_csv(path, encoding=encoding)
+    df.loc[:, '车站编号'] = df['站名'].apply(lambda name: str(station_name_list.index(name) + 1))
+    grouped = df.groupby('车次')
+
+    train_table = {}
+    for trn, group in grouped:
+        if up == 0:
+            train_id = trn / 2
+        elif up == 1:
+            train_id = (trn + 1) / 2
+        train_table[train_id] = {}
+
+        k = 0  # 是否是起始站
+        for row in group.index:
+            station = group.loc[row, '车站编号']
+            train_table[train_id][station] = {}
+            if k == 0:  # 始发站
+                train_table[train_id][station]['dep'] = round(time2num(group.loc[row, '发点']), 2)
+                train_table[train_id][station]['arr'] = round(time2num(group.loc[row, '发点']), 2)
+            elif k == len(group) - 1:  # 终点站
+                train_table[train_id][station]['dep'] = round(time2num(group.loc[row, '到点']), 2)
+                train_table[train_id][station]['arr'] = round(time2num(group.loc[row, '到点']), 2)
+            else:
+                train_table[train_id][station]['dep'] = round(time2num(group.loc[row, '发点']), 2)
+                train_table[train_id][station]['arr'] = round(time2num(group.loc[row, '到点']), 2)
+            k = k + 1
+    return train_table

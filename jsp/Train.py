@@ -16,6 +16,12 @@ class Train:
         self.speed = None  # 列车速度，300,350
         self.miles = None  # 列车车程
 
+    def __hash__(self):
+        return self.traNo.__hash__()
+
+    def __eq__(self, other):
+        return self.traNo == other.traNo
+
     def decode_line_plan(self, g, h, miles):
         all_station_list = list(self.linePlan.keys())
         # 获得出发站
@@ -29,7 +35,7 @@ class Train:
                 self.arrSta = station
                 break
         # 获得列车车程
-        self.miles = miles[int(self.arrSta) - 1] - miles[int(self.depSta) - 1]
+        self.miles = abs(miles[int(self.arrSta) - 1] - miles[int(self.depSta) - 1])
         # 获得经停站（包括出发站和终点站）
         in_rail_flag = 0
         for station in all_station_list:

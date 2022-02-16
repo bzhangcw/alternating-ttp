@@ -1,0 +1,3 @@
+[submodule "jsp1"]
+	path = jsp1
+	url = git@github.com:JinChengneng/Train-Tabling-Problem.git
