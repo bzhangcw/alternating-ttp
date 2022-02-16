@@ -21,6 +21,7 @@ class Train(object):
         :param dep_UB:
         '''
         self.traNo = traNo  # 列车车次
+        self.up = 1  # 1-down 0-up
         self.dep_LB = dep_LB  # 始发时间窗下界
         self.dep_UB = dep_UB  # 始发时间窗上界
         self.arcs = {}
@@ -38,7 +39,7 @@ class Train(object):
         self.v_sta_type = {}
         self.staList = []  # actual stations
         self.linePlan = {}  # 开行方案字典
-        self.opt_path_LR = [] # LR 中的最短路径
+        self.opt_path_LR = []  # LR 中的最短路径
         self.opt_path_LR_dict = None  # LR 最短路径作为dict
         self.opt_path_LR_prev = []  # 上一个迭代钟 LR 中的最短路径
         self.last_opt_path_LR = None
@@ -80,6 +81,12 @@ class Train(object):
         self._ig_t_primal = 0
         self.max_edge_weight = 0
 
+    def __hash__(self):
+        return self.traNo.__hash__()
+
+    def __eq__(self, other):
+        return self.traNo == other.traNo
+
     def __repr__(self):
         return "train" + str(self.traNo)
 
@@ -90,6 +97,8 @@ class Train(object):
         :return:
         '''
         all_station_list = list(self.linePlan.keys())
+        if self.up == 0:
+            all_station_list.reverse()
         for station in all_station_list:
             if self.linePlan[station] in {-1, 1}:
                 depSta = station
@@ -326,12 +335,14 @@ class Train(object):
         self.opt_path_LR_dict = {node: None for node in self.opt_path_LR}
         subg = self.subgraph
         if option == "lagrange":
-            price = [(i, j, {'price': v['weight'] + xa_map[i, j][self.traNo] * yv_multiplier[j], 
+            price = [(i, j, {'price': v['weight'] + xa_map[i, j][self.traNo] * yv_multiplier[j],
                              'multiplier': xa_map[i, j][self.traNo] * yv_multiplier[j]})
                      for i, j, v in subg.edges(data=True)]
         elif option == "pdhg":
-            price = [(i, j, {'price': v['weight'] + xa_map[i, j][self.traNo] * yv_multiplier[j] + gamma * (0.5 - ((i, j) in self.opt_path_LR_dict)), 
-                             'multiplier': xa_map[i, j][self.traNo] * yv_multiplier[j] + gamma * (0.5 - ((i, j) in self.opt_path_LR_dict))})
+            price = [(i, j, {'price': v['weight'] + xa_map[i, j][self.traNo] * yv_multiplier[j] + gamma * (
+                    0.5 - ((i, j) in self.opt_path_LR_dict)),
+                             'multiplier': xa_map[i, j][self.traNo] * yv_multiplier[j] + gamma * (
+                                     0.5 - ((i, j) in self.opt_path_LR_dict))})
                      for i, j, v in subg.edges(data=True)]
         else:
             raise ValueError(f"option {option} is not supported")
@@ -518,7 +529,8 @@ class Train(object):
             if option == "lagrange":
                 e["multiplier"] = xa_map[i, j][self.traNo] * yv_multiplier.get(j, 0)
             elif option == "pdhg":
-                e["multiplier"] = xa_map[i, j][self.traNo] * yv_multiplier.get(j, 0) + gamma * (0.5 - ((i, j) in self.opt_path_LR_dict))
+                e["multiplier"] = xa_map[i, j][self.traNo] * yv_multiplier.get(j, 0) + gamma * (
+                        0.5 - ((i, j) in self.opt_path_LR_dict))
             else:
                 raise ValueError(f"option {option} is not supported")
             p = w + e["multiplier"]

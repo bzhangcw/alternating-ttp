@@ -13,57 +13,71 @@ def get_args():
     parser.add_argument("--TimeSpan", type=int, default=1080, help="total time of railway operating plan")
     # parameters of modeling
     parser.add_argument("--M", type=int, default=1100, help="M used in safety constraints")
-    parser.add_argument("--force_feasibility", type=int, default=1, help="type of objective functions")
+    parser.add_argument("--obj_type", type=str, default='get_fsb_sol', help="type of objective functions")
     parser.add_argument("--obj_num", type=int, default=-1, help="number of trains to assign")
+    parser.add_argument("--trn_tbl_type", type=str, default="order", help="types of variables fixed by given timetable")
+    parser.add_argument("--sol_limit", type=int, default=1, help="limit of solution numbers")
+    parser.add_argument("--time_limit", type=int, default=3600, help="limit of time(second)")
+    parser.add_argument("--direction", type=str, default="down", help="direction of trains")
     arguments = parser.parse_args()
     return arguments
 
 
-def main_jsp():
+# 站名 up=1
+station_name_list = ['北京南', '廊坊', '京津线路所', '津沪线路所', '天津南',
+                     '沧州西', '德州东', '济南西', '崔马庄线路所', '泰安',
+                     '曲阜东', '滕州东', '枣庄', '徐州东', '宿州东',
+                     '蚌埠南', '定远', '滁州', '扬州线路所', '南京南',
+                     '秦淮河线路所', '镇江南', '丹阳北', '常州北', '无锡东',
+                     '苏州北', '昆山南', '黄渡线路所', '上海虹桥']
+
+
+def main_jsp(params_sys):
     # 读取数据
     miles, station_list = read_station('jsp/data/1-station.xlsx')
     g, h = read_station_extra('jsp/data/2-station-extra.xlsx')
     sec_times = read_section('jsp/data/3-section-time.xlsx')
     wait_time_lb, wait_time_ub = read_station_stops('jsp/data/4-station-stops.xlsx')
-    aa_speed, dd_speed, pp_speed, ap_speed, pa_speed, dp_speed, pd_speed = read_safe_interval('jsp/data/5-safe-intervals.xlsx')
-    train_list = read_train('jsp/data/6-lineplan-down.xlsx', station_list, g, h)
-    # train_list = read_train('data/7-lineplan-up.xlsx', station_list, g, h)
+    aa_speed, dd_speed, pp_speed, ap_speed, pa_speed, dp_speed, pd_speed = read_safe_interval(
+        'jsp/data/5-safe-intervals.xlsx')
+    # train_list = read_train('jsp/data/6-lineplan-down.xlsx', station_list, g, h)
+    train_list = read_train('jsp/data/7-lineplan-up.xlsx', station_list, g, h, miles)
 
     # 设置运行参数
     args = get_args()
-    train_begin = 0
-    train_num = 100 # 排标杆车与非标杆车
-    # train_num = len([ trn for trn in train_list[train_begin:] if trn.standard == 1 ]) # 只排标杆车
-    # selected_train_list = train_list[train_begin : train_begin + train_num] # 排前面的车
-    train_split = 50
-    # selected_train_list = train_list[:train_split] + train_list[train_split-train_num:] # 前面的标杆车加长程车加后面的短程车
-    selected_train_list = train_list[:]  # 排全部的车
-    # train_num = len(train_list)
+    args.trn_tbl_type = ''  # 'min_run_time'
+    args.obj_type = 'min_time_span'
+    args.TimeSpan = params_sys.time_span
 
-    # greedy地画出标杆车
-    # assigned_train_list, D_high, A_high = assign_high_level_train(selected_train_list, sec_times, wait_time_lb,
-    #                                                               wait_time_ub, args.TimeSpan)
-    # plot_high_level_train(assigned_train_list, station_list, miles, D_high, A_high,
-    #                       'output/high_level_train_{}.svg'.format(int(train_list[0].up)), args.TimeSpan)
+    selected_train_list = train_list[:params_sys.train_size]  # 排全部的车
 
-    # 数据预处理：得到所有车站的停站车辆和通过车辆
-    stop_trains, pass_trains = get_stop_pass_trains(station_list, selected_train_list)
+    dep_trains, arr_trains, pass_trains = get_dep_arr_pass_trains(station_list, selected_train_list)
 
     # 建立模型与设置参数
     model = Model('TTP_JSP')
     model.setParam('OutputFlag', 1)
     # 增加各占出发时间变量、到达时间变量及其约束
-    model, A_var, D_var, W_var, T_var = add_time_var_and_cons(model, selected_train_list, sec_times, wait_time_lb,
-                                                              wait_time_ub, args.TimeSpan, delta=2)
+    model, A_var, D_var, W_var, T_var = add_time_var_and_cons(
+        {}, args.trn_tbl_type, model, selected_train_list,
+        sec_times, wait_time_lb, wait_time_ub,
+        obj_type=args.obj_type,
+        TimeSpan=args.TimeSpan,
+        TimeStart=360,
+        delta=args.TimeSpan
+    )
     # 定义目标函数
-    model, x_var = set_obj_func(model, selected_train_list, W_var, T_var, args.force_feasibility, args.obj_num)
+    model, x_var = set_obj_func(model, selected_train_list, W_var, T_var, A_var, args.obj_type, args.obj_num,
+                                solutionLimit=1e3, time_limit=600)
     # 增加同一站台任意一对车辆的安全间隔约束，以及防止站间越行的约束
-    model, theta_aa, theta_ap, theta_pa, theta_pp, theta_dd, theta_dp, theta_pd = \
-        add_safe_cons(model, x_var, station_list, stop_trains, pass_trains, A_var, D_var, aa_speed, dd_speed, pp_speed, ap_speed, pa_speed, dp_speed, pd_speed, args.M)
+    model, theta = add_safe_cons({}, args.trn_tbl_type, model, x_var, station_list, selected_train_list, dep_trains,
+                                 arr_trains,
+                                 pass_trains, A_var, D_var, aa_speed, dd_speed, pp_speed, ap_speed, pa_speed, dp_speed,
+                                 pd_speed, sec_times, args.M)
+    theta_aa, theta_ap, theta_pa, theta_pp, theta_dd, theta_dp, theta_pd = \
+        theta['aa'], theta['ap'], theta['pa'], theta['pp'], theta['dd'], theta['dp'], theta['pd']
     model.setParam('MIPFocus', 1)  # 专注于可行解
 
-    return model, theta_aa, theta_ap, theta_pa, theta_pp, theta_dd, theta_dp, theta_pd, x_var, \
-           D_var, A_var
+    return model, theta_aa, theta_ap, theta_pa, theta_pp, theta_dd, theta_dp, theta_pd, x_var, D_var, A_var
     # 模型求解
     # model.optimize()
     #

@@ -1,9 +1,14 @@
 """
 output utilities
 """
-import pandas as pd
-import numpy as np
+
+
+from typing import *
+
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+
 from util import *
 
 DEBUGGING = True
@@ -28,8 +33,19 @@ color_value = {
     '6': 'olive'
 }
 
+###########################
+# output format
+###########################
+COLUMNS_CHS_ENG = {
+    '车次': 'id',
+    '站序': 'station#',
+    '站名': 'station_name',
+    '到点': 'str_time_arr',
+    '发点': 'str_time_dep'
+}
 
-def read_timetable_csv(fpath, st=None):
+
+def read_timetable_csv(fpath, st=None, station_name_map=None):
     """
 
     read standard timetable csv
@@ -40,14 +56,31 @@ def read_timetable_csv(fpath, st=None):
             if not defined, infer from the data.
 
     Returns:
-
     """
-    pass
+    df = pd.read_excel(fpath).rename(
+        columns=COLUMNS_CHS_ENG
+    ).assign(
+        station_id=lambda df: df['station_name'].apply(station_name_map.get),
+        station_i=lambda df: df['station_id'].apply(lambda x: f"_{x}"),
+        station_o=lambda df: df['station_id'].apply(lambda x: f"{x}_"),
+        time_arr=lambda df: pd.to_datetime(df['str_time_arr']).apply(lambda x: x.hour * 60 + x.minute - st),
+        time_dep=lambda df: pd.to_datetime(df['str_time_dep']).apply(lambda x: x.hour * 60 + x.minute - st)
+    )
+    train_paths = df.groupby('id').apply(
+        lambda grp: sorted(
+            list(zip(grp['station_i'], grp['time_arr'])) + list(zip(grp['station_o'], grp['time_dep'])),
+            key=lambda x: x[-1]
+        )
+    )
+    return df, train_paths
 
 
-def plot_timetables(train_list, miles, station_list, param_sys: SysParams, param_subgrad: SubgradParam):
+def plot_timetables(train_list, miles, station_list, param_sys: SysParams, param_subgrad: SubgradParam, selective: List=None):
+
     for i in range(len(train_list)):
         train = train_list[i]
+        if selective is not None and train.traNo not in selective:
+            continue
         xlist = []
         ylist = []
         if not train.is_best_feasible:
@@ -103,5 +136,7 @@ def plot_convergence(param_sys: SysParams, param_subgrad: SubgradParam):
     plt.xlabel('Iteration', fontdict=font_dic)
     plt.ylabel('Bounds update', fontdict=font_dic)
     plt.title('LR: Bounds updates \n', fontsize=23)
-    plt.savefig(f"{param_sys.fdir_result}/{param_subgrad.dual_method}.{param_subgrad.primal_heuristic_method}-{param_sys.train_size}.{param_sys.station_size}.{param_sys.time_span}.convergence.png", dpi=500)
+    plt.savefig(
+        f"{param_sys.fdir_result}/{param_subgrad.dual_method}.{param_subgrad.primal_heuristic_method}-{param_sys.train_size}.{param_sys.station_size}.{param_sys.time_span}.convergence.png",
+        dpi=500)
     plt.clf()

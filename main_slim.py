@@ -23,8 +23,8 @@ initialize stations, sections, trains and train arcs
 station_list = []  # 实际车站列表
 station_name_map = {}  # 实际车站对应名
 v_station_list = []  # 时空网车站列表，车站一分为二 # 源节点s, 终结点t
-sec_times = {}  # total miles for stations
 miles = []
+miles_up = []
 train_list: List[Train] = []
 start_time = time.time()
 sec_times_all = {}
@@ -82,12 +82,16 @@ def read_section(path):
     df = pd.read_excel(path, engine='openpyxl').assign(
         interval=lambda dfs: dfs['区间名'].apply(lambda x: tuple(x.split("-")))
     ).set_index("interval")
-    global sec_times, sec_times_all
-    sec_times = df[350].to_dict()
-    sec_times_all = {300: df[300].to_dict(), 350: df[350].to_dict()}
+    global sec_times_all
+    sec_300 = df[300].to_dict()
+    sec_350 = df[300].to_dict()
+    sec_times_all = {
+        300: {**sec_300, **{(k[-1], k[0]): v for k, v in sec_300.items()}},
+        350: {**sec_350, **{(k[-1], k[0]): v for k, v in sec_350.items()}},
+    }
 
 
-def parse_row_to_train(row):
+def parse_row_to_train(row, time_span=1080):
     tr = Train(row['车次ID'], 0, time_span, backend=1)
     tr.preferred_time = row['偏好始发时间']
     tr.up = row['上下行']
@@ -106,11 +110,11 @@ def parse_row_to_train(row):
     return tr
 
 
-def read_train(path, size=10):
-    df = pd.read_excel(path, dtype={"车次ID": str}, engine='openpyxl')
+def read_train(path, size=10, time_span=1080):
+    df = pd.read_excel(path, dtype={"车次ID": int, "车次": str}, engine='openpyxl')
     df = df.rename(columns={k: str(k) for k in df.columns})
     df = df.iloc[:size, :]
-    train_series = df.apply(lambda row: parse_row_to_train(row), axis=1).dropna()
+    train_series = df.apply(lambda row: parse_row_to_train(row, time_span), axis=1).dropna()
     global train_list
     train_list = train_series.to_list()
 
@@ -134,7 +138,7 @@ def read_station_stop_start_addtime(path):
     start_addTime[300] = df_300["上行起车附加时分"].to_dict()
 
 
-def initialize_node_precedence():
+def initialize_node_precedence(time_span):
     for station in v_station_list:
         for t in range(0, time_span):
             node_prec_map[station, t] = [
@@ -246,7 +250,7 @@ def check_dual_feasibility(subgradient_dict, multiplier, train_list, LB):
     assert dual_cost == dual_cost_2 + lambda_mul_subg
 
 
-def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp"):
+def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp", params_sys=None, *args, **kwargs):
     """
     produce path: iterable of (station, time)
 
@@ -255,6 +259,7 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp"):
     """
     # if method == "seq":
     # feasible solutions
+    __unused = args, kwargs
     path_cost_feasible = 0
     occupied_nodes = {}
     occupied_arcs = defaultdict(lambda: set())
@@ -287,39 +292,46 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp"):
         max_iter = 30
         if not jsp_init:
             # @update, add d_var, a_var
-            model, theta_aa, theta_ap, theta_pa, theta_pp, theta_dd, theta_dp, theta_pd, x_var, d_var, a_var, *_ = main_jsp()
+            model, theta_aa, theta_ap, theta_pa, theta_pp, theta_dd, theta_dp, theta_pd, x_var, d_var, a_var, *_ = main_jsp(
+                params_sys)
             buffer.extend(
                 [model, theta_aa, theta_ap, theta_pa, theta_pp, theta_dd, theta_dp, theta_pd, x_var, d_var, a_var])
             buffer = tuple(buffer)
         else:
             model, theta_aa, theta_ap, theta_pa, theta_pp, theta_dd, theta_dp, theta_pd, x_var, d_var, a_var, *_ = buffer
+        train_list = [train_list[276], train_list[16], train_list[109]]
         train_order, overtaking_dict = from_train_path_to_train_order(train_list, method=path_method)
         if path_method == "primal":
             fix_x_constrs = fix_train_at_station(model, x_var, [trn for trn in train_list if trn.is_feasible])
-        fix_train_order_at_station(model, train_order, safe_int, overtaking_dict, theta_aa, theta_ap, theta_pa,
-                                   theta_pp, theta_dd, theta_dp, theta_pd)
+        fix_train_order_at_station(
+            model, train_order, safe_int, overtaking_dict, theta_aa, theta_ap, theta_pa,
+            theta_pp, theta_dd, theta_dp, theta_pd
+        )
+
         model.setParam(GRB.Param.TimeLimit, 600)  # 找到可行解就停止求解并返回
-        # model.setParam(GRB.Param.SolutionLimit, 1)  # 找到可行解就停止求解并返回
+
         model.optimize()
         if model.status == GRB.INFEASIBLE:
             # todo, fix this
-            # IIS_resolve(model, max_iter)
-            # model.write("ttp.ilp")
+            IIS_resolve(model, max_iter)
+            model.computeIIS()
+            model.write("ttp.ilp")
             pass
+
         model.remove(getConstrByPrefix(model, "headway_fix"))  # remove added headway fix constraints
         if path_method == "primal":
             model.remove(fix_x_constrs)
         if model.status not in [GRB.INF_OR_UNBD, GRB.INFEASIBLE, GRB.UNBOUNDED]:
             jsp_count = 0
-            d_sol = {tr: {s: v.x for s, v in vl.items()} for tr, vl in d_var.items() if x_var[tr].x == 1}
-            a_sol = {tr: {s: v.x for s, v in vl.items()} for tr, vl in a_var.items() if x_var[tr].x == 1}
+            x_sol = {k: 1 if np.isreal(v) else v.x for k, v in x_var.items()}
+            d_sol = {tr: {s: v.x for s, v in vl.items()} for tr, vl in d_var.items() if x_sol[tr] == 1}
+            a_sol = {tr: {s: v.x for s, v in vl.items()} for tr, vl in a_var.items() if x_sol[tr] == 1}
 
             for tr in train_list:
-                trid = tr.traNo
-                if not trid in d_sol:
+                if not tr in d_sol:
                     continue
-                _arr = a_sol[trid]
-                _dep = d_sol[trid]
+                _arr = a_sol[tr]
+                _dep = d_sol[tr]
 
                 # tr.create_feasible_by_time(a_sol[tridx], d_sol[tridx])
                 def _gen_path(_arr, _dep):
@@ -329,8 +341,10 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp"):
                         yield f"{s}_", _dep[s] - 360
                     yield '_t', -1
 
-                tr.feasible_path_jsp = list(_gen_path(_arr, _dep))
-                jsp_count += 1
+                _path = list(_gen_path(_arr, _dep))
+                tr.feasible_path_jsp = _path
+                if _path[-2][-1] <= params_sys.time_span:
+                    jsp_count += 1
             # if jsp is better.
             if jsp_count > count:
                 count = jsp_count
@@ -344,6 +358,12 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp"):
         raise TypeError(f"method has no wrong type: {method}")
 
     return feasible_provider, path_cost_feasible, count, not_feasible_trains, buffer
+
+
+def process_updata():
+    global miles_up
+    miles_up = np.array(list(reversed(miles)))
+    miles_up = - miles_up + miles_up.max()
 
 
 if __name__ == '__main__':
@@ -364,7 +384,8 @@ if __name__ == '__main__':
     read_station_stop_start_addtime('raw_data/2-station-extra.xlsx')
     read_section('raw_data/3-section-time.xlsx')
     read_dwell_time('raw_data/4-dwell-time.xlsx')
-    read_train('raw_data/6-lineplan-down.xlsx', train_size)
+    read_train('raw_data/7-lineplan-up.xlsx', train_size, time_span)
+    # read_train('raw_data/6-lineplan-down.xlsx', train_size, time_span)
     read_intervals('raw_data/5-safe-intervals.xlsx')
 
     '''
@@ -372,7 +393,7 @@ if __name__ == '__main__':
     '''
     logger.info("reading finish")
     logger.info("step 1")
-    initialize_node_precedence()
+    initialize_node_precedence(time_span)
     logger.info(f"maximum estimate of active nodes {gc.vc}")
 
     for tr in train_list:
@@ -436,7 +457,8 @@ if __name__ == '__main__':
                 safe_int,
                 jsp_init,
                 buffer,
-                method=params_subgrad.primal_heuristic_method
+                method=params_subgrad.primal_heuristic_method,
+                params_sys=params_sys
             )
             params_subgrad.feasible_provider = feasible_provider
             jsp_init = True
