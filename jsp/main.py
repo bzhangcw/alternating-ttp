@@ -40,13 +40,15 @@ def main_jsp(params_sys):
     wait_time_lb, wait_time_ub = read_station_stops('jsp/data/4-station-stops.xlsx')
     aa_speed, dd_speed, pp_speed, ap_speed, pa_speed, dp_speed, pd_speed = read_safe_interval(
         'jsp/data/5-safe-intervals.xlsx')
-    # train_list = read_train('jsp/data/6-lineplan-down.xlsx', station_list, g, h)
-    train_list = read_train('jsp/data/7-lineplan-up.xlsx', station_list, g, h, miles)
+    if params_sys.up:
+        train_list = read_train('jsp/data/7-lineplan-up.xlsx', station_list, g, h, miles)
+    else:
+        train_list = read_train('jsp/data/6-lineplan-down.xlsx', station_list, g, h, miles)
 
     # 设置运行参数
     args = get_args()
     args.trn_tbl_type = ''  # 'min_run_time'
-    args.obj_type = 'min_time_span'
+    args.obj_type = 'max_trn_num'
     args.TimeSpan = params_sys.time_span
 
     selected_train_list = train_list[:params_sys.train_size]  # 排全部的车
