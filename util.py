@@ -28,6 +28,7 @@ multiplier = defaultdict(int)  # each (station, t)
 # node multiplier
 yv_multiplier = {}  # the multiplier of each v
 safe_int = {}
+safe_int_df = None
 # arrival-arrival headway and departure-departure headway
 eps = 5
 
@@ -51,7 +52,19 @@ gc = GraphCounter()
 
 class SysParams(object):
     # todo, support ArgumentParser
-    pass
+    DBG = False
+    station_size = 0
+    train_size = 0
+    time_span = 0
+    iter_max = 0
+    up = 0
+
+    def parse_environ(self):
+        import os
+        self.station_size = int(os.environ.get('station_size', 29))
+        self.train_size = int(os.environ.get('train_size', 80))
+        self.time_span = int(os.environ.get('time_span', 500))
+        self.iter_max = int(os.environ.get('iter_max', 100))
 
 
 # subgradient params
@@ -72,6 +85,12 @@ class SubgradParam(object):
         self.dual_method = "pdhg"  # "lagrange" or "pdhg"
         self.primal_heuristic_method = "jsp"  # "jsp" or "seq"
         self.feasible_provider = "jsp"  # "jsp" or "seq"
+        self.max_number = 1
+
+    def parse_environ(self):
+        import os
+        self.primal_heuristic_method = os.environ.get('primal', 'jsp')
+        self.dual_method = os.environ.get('dual', 'pdhg')
 
     def update_bound(self, lb):
         if lb >= self.lb:
