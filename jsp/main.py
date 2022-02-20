@@ -58,6 +58,8 @@ def main_jsp(params_sys):
     # 建立模型与设置参数
     model = Model('TTP_JSP')
     model.setParam('OutputFlag', 1)
+    model.setParam('MIPFocus', 1)  # 专注于可行解
+
     # 增加各占出发时间变量、到达时间变量及其约束
     model, A_var, D_var, W_var, T_var = add_time_var_and_cons(
         {}, args.trn_tbl_type, model, selected_train_list,
@@ -75,11 +77,8 @@ def main_jsp(params_sys):
                                  arr_trains,
                                  pass_trains, A_var, D_var, aa_speed, dd_speed, pp_speed, ap_speed, pa_speed, dp_speed,
                                  pd_speed, sec_times, args.M)
-    theta_aa, theta_ap, theta_pa, theta_pp, theta_dd, theta_dp, theta_pd = \
-        theta['aa'], theta['ap'], theta['pa'], theta['pp'], theta['dd'], theta['dp'], theta['pd']
-    model.setParam('MIPFocus', 1)  # 专注于可行解
 
-    return model, theta_aa, theta_ap, theta_pa, theta_pp, theta_dd, theta_dp, theta_pd, x_var, D_var, A_var
+    return model, theta, x_var, D_var, A_var
     # 模型求解
     # model.optimize()
     #

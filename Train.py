@@ -364,13 +364,13 @@ class Train(object):
         # i. get neighborhood size
         radius = {}
         for (i, t), c in occupied_nodes.items():
-            _type_affix = c + self.v_sta_type.get(i, '%')
-            if _type_affix in _safe_int:
-                radius[i, t] = _safe_int[_type_affix][i.strip("_"), self.speed]
-            else:
-                radius[i, t] = 0  # move the center only.
+            _type_affix_after = c + self.v_sta_type.get(i, '%')
+            _type_affix_before = self.v_sta_type.get(i, '%') + c
+            radius_after = _safe_int[_type_affix_after][i.strip("_"), self.speed] if _type_affix_after in _safe_int else 0
+            radius_before = _safe_int[_type_affix_before][i.strip("_"), self.speed] if _type_affix_before in _safe_int else 0  # todo: use speed of rear train
+            radius[i, t] = (radius_before, radius_after)
         # ii. then remove nodes defined by radius
-        _all_nodes = ((i, t + dlt) for (i, t), r in radius.items() for dlt in range(-r + 1, r))
+        _all_nodes = ((i, t + dlt) for (i, t), (r_b, r_a) in radius.items() for dlt in range(-r_b + 1, r_a))
         self.subgraph_primal.remove_nodes_from(_all_nodes)
 
         # step 2,
@@ -557,7 +557,7 @@ class Train(object):
             radius_before = _safe_int[_type_affix_before][i.strip("_"), self.speed] if _type_affix_before in _safe_int else 0  # todo: use speed of rear train
             radius[i, t] = (radius_before, radius_after)
         # ii. then remove nodes defined by radius
-        _all_nodes = ((i, t + dlt) for (i, t), r in radius.items() for dlt in range(-r, r + 1))
+        _all_nodes = ((i, t + dlt) for (i, t), (r_b, r_a) in radius.items() for dlt in range(-r_b + 1, r_a))
         _ig_all_nodes = [self._ig_nodes_id[n] for n in _all_nodes if n in self._ig_nodes]
         self.subgraph_primal.delete_vertices(_ig_all_nodes)
         self._ig_t_primal = self.subgraph_primal.vcount() - 1

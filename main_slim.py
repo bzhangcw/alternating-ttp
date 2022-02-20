@@ -314,11 +314,7 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp", param
         max_iter = 30
         if not jsp_init:
             # @update, add d_var, a_var
-            model, theta_aa, theta_ap, theta_pa, theta_pp, theta_dd, theta_dp, theta_pd, x_var, d_var, a_var, *_ = main_jsp(
-                params_sys)
-            buffer.extend(
-                [model, theta_aa, theta_ap, theta_pa, theta_pp, theta_dd, theta_dp, theta_pd, x_var, d_var, a_var])
-            model, theta, x_var, d_var, a_var, *_ = main_jsp()
+            model, theta, x_var, d_var, a_var, *_ = main_jsp(params_sys)
             buffer.extend([model, theta, x_var, d_var, a_var])
             buffer = tuple(buffer)
         else:
