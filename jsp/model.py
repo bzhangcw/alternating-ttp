@@ -122,9 +122,9 @@ def add_time_var_and_cons(pre_train_table, trn_tbl_type, model, train_list, sec_
                     model.addConstr(W_var[train][station] <= wait_time_ub[station],
                                     name="cons_wait_time_high_ub_" + trn_sttn_name)
             # 标杆车出发时间偏好
-            if train.standard == 1:
-                model.addConstr(D_var[train][train.depSta] >= train.preferred_time - delta)
-                model.addConstr(D_var[train][train.depSta] <= train.preferred_time + delta)
+            # if train.standard == 1:
+            #     model.addConstr(D_var[train][train.depSta] >= train.preferred_time - delta, name=f"standard_ge[{train.traNo}][{train.depSta}]")
+            #     model.addConstr(D_var[train][train.depSta] <= train.preferred_time + delta, name=f"standard_le[{train.traNo}][{train.depSta}]")
 
     for train in train_list:
         T_var[train] = {}

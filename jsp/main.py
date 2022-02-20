@@ -50,6 +50,7 @@ def main_jsp(params_sys):
     args.trn_tbl_type = ''  # 'min_run_time'
     args.obj_type = 'max_trn_num'
     args.TimeSpan = params_sys.time_span
+    print(args)
 
     selected_train_list = train_list[:params_sys.train_size]  # 排全部的车
 
