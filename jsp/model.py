@@ -186,7 +186,7 @@ def add_safe_cons(pre_train_table, trn_tbl_type, model, x_var, station_list, tra
             theta['dp'][sttn][trn] = {}
             safe_constrs['dd'][sttn][trn] = {}
             safe_constrs['dp'][sttn][trn] = {}
-        
+
         for trn in arr_trains[sttn]:
             theta['aa'][sttn][trn] = {}
             theta['ap'][sttn][trn] = {}
@@ -246,7 +246,7 @@ def add_safe_cons(pre_train_table, trn_tbl_type, model, x_var, station_list, tra
                 # 到到 aa
                 model.addConstr(
                     theta['aa'][sttn][arr_trn_1][arr_trn_2] + theta['aa'][sttn][arr_trn_2][arr_trn_1] == 1)
-                
+
                 # 约束：列车安全间隔
                 # 到到 aa
                 safe_constrs['aa'][sttn][arr_trn_1][arr_trn_2] = model.addConstr(A_var[arr_trn_2][sttn] + M * (
@@ -320,7 +320,7 @@ def add_safe_cons(pre_train_table, trn_tbl_type, model, x_var, station_list, tra
             for pass_trn in pass_trains[sttn]:
                 # 约束：列车次序 到通与通到 ap pa
                 model.addConstr(theta['ap'][sttn][arr_trn][pass_trn] + theta['pa'][sttn][pass_trn][arr_trn] == 1)
-                
+
                 # 约束：列车安全间隔
                 # 到通与通到 ap pa
                 safe_constrs['ap'][sttn][arr_trn][pass_trn] = model.addConstr(A_var[pass_trn][sttn] + M * (
@@ -374,7 +374,7 @@ def add_safe_cons(pre_train_table, trn_tbl_type, model, x_var, station_list, tra
                                             pre_train_table[train_2.traNo][station]['dep']
                                 fixed_theta = 1 if time_diff < 0 else 0
                                 model.addConstr(theta['dd'][station][train_1][train_2] == fixed_theta)
-                        
+
                         elif train_1 in arr_trains[station]:
                             if train_2 in pass_trains[station]:
                                 # 到通 ap
