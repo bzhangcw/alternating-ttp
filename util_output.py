@@ -170,9 +170,9 @@ def plot_convergence(param_sys: SysParams, param_subgrad: SubgradParam):
         "size": 20
     }
 
-    x_cor = range(0, param_subgrad.iter + 1)
-    plt.plot(x_cor, param_subgrad.lb_arr, label='LB')
-    plt.plot(x_cor, param_subgrad.ub_arr, label='UB')
+    x_cor = range(0, param_subgrad.iter)
+    plt.figure(0)
+    plt.plot(x_cor, param_subgrad.lb_arr, label=f'LB_{param_subgrad.gamma:.4f}_{param_subgrad.alpha:.4f}')
     plt.legend()
     plt.xlabel('Iteration', fontdict=font_dic)
     plt.ylabel('Bounds update', fontdict=font_dic)
@@ -180,4 +180,70 @@ def plot_convergence(param_sys: SysParams, param_subgrad: SubgradParam):
     plt.savefig(
         f"{param_sys.fdir_result}/{param_subgrad.dual_method}.{param_subgrad.primal_heuristic_method}-{param_sys.train_size}.{param_sys.station_size}.{param_sys.time_span}.convergence.png",
         dpi=500)
-    plt.clf()
+    # plt.clf()
+
+    plt.figure(1)
+    plt.plot(x_cor, param_subgrad.norms[0], label=f'norm_1_{param_subgrad.gamma:.4f}_{param_subgrad.alpha:.4f}')
+    plt.hlines(0, xmin=x_cor[0], xmax=x_cor[-1])
+    plt.legend()
+    plt.xlabel('Iteration', fontdict=font_dic)
+    plt.ylabel('norm', fontdict=font_dic)
+    plt.title('LR: Primal Infeasibility \n', fontsize=23)
+    plt.savefig(
+        f"{param_sys.fdir_result}/{param_subgrad.dual_method}.{param_subgrad.primal_heuristic_method}-{param_sys.train_size}.{param_sys.station_size}.{param_sys.time_span}.norm_1.png",
+        dpi=500)
+
+    plt.figure(2)
+    plt.plot(x_cor, param_subgrad.norms[1], label=f'norm_2_{param_subgrad.gamma:.4f}_{param_subgrad.alpha:.4f}')
+    plt.hlines(0, xmin=x_cor[0], xmax=x_cor[-1])
+    plt.legend()
+    plt.xlabel('Iteration', fontdict=font_dic)
+    plt.ylabel('norm', fontdict=font_dic)
+    plt.title('LR: Primal Infeasibility \n', fontsize=23)
+    plt.savefig(
+        f"{param_sys.fdir_result}/{param_subgrad.dual_method}.{param_subgrad.primal_heuristic_method}-{param_sys.train_size}.{param_sys.station_size}.{param_sys.time_span}.norm_2.png",
+        dpi=500)
+
+    plt.figure(3)
+    plt.plot(x_cor, param_subgrad.norms[2], label=f'norm_inf_{param_subgrad.gamma:.4f}_{param_subgrad.alpha:.4f}')
+    plt.hlines(0, xmin=x_cor[0], xmax=x_cor[-1])
+    plt.legend()
+    plt.xlabel('Iteration', fontdict=font_dic)
+    plt.ylabel('norm', fontdict=font_dic)
+    plt.title('LR: Primal Infeasibility \n', fontsize=23)
+    plt.savefig(
+        f"{param_sys.fdir_result}/{param_subgrad.dual_method}.{param_subgrad.primal_heuristic_method}-{param_sys.train_size}.{param_sys.station_size}.{param_sys.time_span}.norm_inf.png",
+        dpi=500)
+
+    plt.figure(4)
+    plt.plot(x_cor, param_subgrad.multipliers[0], label=f'multiplier_norm_1_{param_subgrad.gamma:.4f}_{param_subgrad.alpha:.4f}')
+    plt.hlines(0, xmin=x_cor[0], xmax=x_cor[-1])
+    plt.legend()
+    plt.xlabel('Iteration', fontdict=font_dic)
+    plt.ylabel('norm', fontdict=font_dic)
+    plt.title('LR: Dual Excess \n', fontsize=23)
+    plt.savefig(
+        f"{param_sys.fdir_result}/{param_subgrad.dual_method}.{param_subgrad.primal_heuristic_method}-{param_sys.train_size}.{param_sys.station_size}.{param_sys.time_span}.multiplier_norm_1.png",
+        dpi=500)
+
+    plt.figure(5)
+    plt.plot(x_cor, param_subgrad.multipliers[1], label=f'multiplier_norm_2_{param_subgrad.gamma:.4f}_{param_subgrad.alpha:.4f}')
+    plt.hlines(0, xmin=x_cor[0], xmax=x_cor[-1])
+    plt.legend()
+    plt.xlabel('Iteration', fontdict=font_dic)
+    plt.ylabel('norm', fontdict=font_dic)
+    plt.title('LR: Primal Excess \n', fontsize=23)
+    plt.savefig(
+        f"{param_sys.fdir_result}/{param_subgrad.dual_method}.{param_subgrad.primal_heuristic_method}-{param_sys.train_size}.{param_sys.station_size}.{param_sys.time_span}.multiplier_norm_2.png",
+        dpi=500)
+
+    plt.figure(6)
+    plt.plot(x_cor, param_subgrad.multipliers[2], label=f'multiplier_norm_inf_{param_subgrad.gamma:.4f}_{param_subgrad.alpha:.4f}')
+    plt.hlines(0, xmin=x_cor[0], xmax=x_cor[-1])
+    plt.legend()
+    plt.xlabel('Iteration', fontdict=font_dic)
+    plt.ylabel('norm', fontdict=font_dic)
+    plt.title('LR: Primal Excess \n', fontsize=23)
+    plt.savefig(
+        f"{param_sys.fdir_result}/{param_subgrad.dual_method}.{param_subgrad.primal_heuristic_method}-{param_sys.train_size}.{param_sys.station_size}.{param_sys.time_span}.multiplier_norm_inf.png",
+        dpi=500)

@@ -63,7 +63,7 @@ class SysParams(object):
     def parse_environ(self):
         import os
         self.station_size = int(os.environ.get('station_size', 29))
-        self.train_size = int(os.environ.get('train_size', 80))
+        self.train_size = int(os.environ.get('train_size', 292))
         self.time_span = int(os.environ.get('time_span', 1080))
         self.iter_max = int(os.environ.get('iter_max', 100))
         self.up = int(os.environ.get('up', 0))
@@ -81,13 +81,15 @@ class SubgradParam(object):
         self.eps_num_stuck = 3
         self.iter = 0
         self.lb = 1e-6
-        self.lb_arr = [-1e6]
-        self.ub_arr = [1e6]
+        self.lb_arr = []
+        self.ub_arr = []
         self.gap = 1
         self.dual_method = "pdhg"  # "lagrange" or "pdhg"
         self.primal_heuristic_method = "jsp"  # "jsp" or "seq"
         self.feasible_provider = "jsp"  # "jsp" or "seq"
         self.max_number = 1
+        self.norms = ([], [], [])
+        self.multipliers = ([], [], [])
 
     def parse_environ(self):
         import os
@@ -115,6 +117,22 @@ class SubgradParam(object):
         _best_ub = min(self.ub_arr)
         _best_lb = max(self.lb_arr)
         self.gap = (_best_ub - _best_lb) / (abs(_best_lb) + 1e-3)
+
+    def reset(self):
+        self.num_stuck = 0
+        self.eps_num_stuck = 3
+        self.iter = 0
+        self.lb = 1e-6
+        self.lb_arr = []
+        self.ub_arr = []
+        self.gap = 1
+        self.dual_method = "pdhg"  # "lagrange" or "pdhg"
+        self.primal_heuristic_method = "jsp"  # "jsp" or "seq"
+        self.feasible_provider = "jsp"  # "jsp" or "seq"
+        self.max_number = 1
+        self.norms = ([], [], [])  # l1-norm, l2-norm, infty-norm
+        self.multipliers = ([], [], [])
+        self.parse_environ()
 
 
 def from_train_path_to_train_order(train_list, method="dual"):

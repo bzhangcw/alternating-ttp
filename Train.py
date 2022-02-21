@@ -600,3 +600,18 @@ class Train(object):
     def save_prev_lr_path(self):
         self.opt_path_LR_prev = self.opt_path_LR
         self.opt_path_LR_prev_dict = {node: None for node in self.opt_path_LR_prev}
+
+    def reset(self):
+        self.opt_path_LR = []  # LR 中的最短路径
+        self.opt_path_LR_dict = None  # LR 最短路径作为dict
+        self.opt_path_LR_prev = []  # 上一个迭代钟 LR 中的最短路径
+        self.last_opt_path_LR = None
+        self.opt_cost_LR = 0
+        self.opt_cost_LR_normal = 0
+        self.feasible_path = None  # 可行解中的最短路径
+        self.feasible_path_jsp = None  # 可行解中的最短路径
+        self.last_feasible_path = None  # 上一个可行解的最短路径，用于置0
+        self.feasible_cost = 0
+        self.feasible_provider = 'seq'
+        self.timetable = {}  # 以virtual station为key，存int值
+        self.is_feasible = False

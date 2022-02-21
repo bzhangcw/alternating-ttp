@@ -12,10 +12,18 @@ import util_output as uo
 from Train import *
 from jsp.main import main_jsp
 from gurobipy import GRB
+from itertools import product
 
-logging.basicConfig(format="%(asctime)s: %(message)s", level=logging.INFO)
+import sys
+
+# logging.basicConfig(format="%(asctime)s: %(message)s", level=logging.INFO)
+logFormatter = logging.Formatter("%(asctime)s: %(message)s")
 logger = logging.getLogger("railway")
 logger.setLevel(logging.INFO)
+
+consoleHandler = logging.StreamHandler(sys.stdout)
+consoleHandler.setFormatter(logFormatter)
+logger.addHandler(consoleHandler)
 
 '''
 initialize stations, sections, trains and train arcs
@@ -202,6 +210,16 @@ def update_subgradient_dict(node_occupy_dict):
     return subgradient_dict
 
 
+def update_primal_infeasibility(subgradient_dict):
+    subgs = [max(d, 0) for subg_dict in subgradient_dict.values() for d in subg_dict.values()]
+    return np.linalg.norm(subgs, 1), np.linalg.norm(subgs, 2), np.max(subgs)
+
+
+def update_dual_excess(multiplier):
+    multipliers = [mu for multi in multiplier.values() for mu in multi.values()]
+    return np.linalg.norm(multipliers, 1), np.linalg.norm(multipliers, 2), np.max(multipliers)
+
+
 def update_node_occupy_dict(node_occupy_dict, train, option="lagrange", alpha=1):
     if option == "lagrange":
         for node in train.opt_path_LR[1:-1]:  # z_{j v}
@@ -213,7 +231,7 @@ def update_node_occupy_dict(node_occupy_dict, train, option="lagrange", alpha=1)
         raise ValueError(f"option {option} is not supported")
 
 
-def update_step_size(params_subgrad, method="polyak"):
+def update_step_size(params_subgrad, method="polyak", alpha=None):
     global subgradient_dict, UB, LB
     if method == "simple":
         if params_subgrad.iter < 20:
@@ -224,6 +242,8 @@ def update_step_size(params_subgrad, method="polyak"):
     elif method == "polyak":
         subg_norm = np.linalg.norm([v for d in subgradient_dict.values() for v in d.values()]) ** 2
         params_subgrad.alpha = params_subgrad.kappa * (params_subgrad.ub_arr[-1] - params_subgrad.lb_arr[-1]) / subg_norm
+    elif method == "constant":
+        params_subgrad.alpha = alpha
     else:
         raise ValueError(f"undefined method {method}")
 
@@ -424,6 +444,11 @@ if __name__ == '__main__':
     subdir_result = params_sys.subdir_result = datetime.datetime.now().strftime('%y%m%d-%H%M')
     fdir_result = params_sys.fdir_result = f"result/{subdir_result}"
     os.makedirs(fdir_result, exist_ok=True)
+
+    fileHandler = logging.FileHandler("{0}/{1}.log".format(fdir_result, "out"))
+    fileHandler.setFormatter(logFormatter)
+    logger.addHandler(fileHandler)
+
     logger.info(f"size: #train,#station,#timespan,#iter_max: {train_size, station_size, time_span, iter_max}")
     read_station('raw_data/1-station.xlsx', station_size)
     read_station_stop_start_addtime('raw_data/2-station-extra.xlsx')
@@ -434,111 +459,88 @@ if __name__ == '__main__':
     else:
         read_train('raw_data/6-lineplan-down.xlsx', train_size, time_span)
     read_intervals('raw_data/5-safe-intervals.xlsx')
-
-    '''
-    initialization
-    '''
     logger.info("reading finish")
-    logger.info("step 1")
-    multiplier = init_multipliers(multiplier, v_station_list)
-    logger.info(f"maximum estimate of active nodes {gc.vc}")
 
     for tr in train_list:
         tr.create_subgraph(sec_times_all[tr.speed], time_span)
 
-    logger.info("step 2")
-    logger.info("step 3")
-    logger.info(f"actual train size {len(train_list)}")
+    alpha_list = np.logspace(-3, 1, num=10)
+    gamma_list = np.logspace(-3, 1, num=10)
+    for alpha, gamma in product(alpha_list, gamma_list):
+        logger.info("Start")
+        for tr in train_list:
+            tr.reset()
+        params_subgrad.reset()
+        params_subgrad.alpha = alpha
+        params_subgrad.gamma = gamma
+        logger.info(f"alpha={alpha}, gamma={gamma}")
+        '''
+        initialization
+        '''
+        multiplier = init_multipliers(multiplier, v_station_list)
 
-    '''
-    Lagrangian relaxation approach
-    '''
+        '''
+        Lagrangian relaxation approach
+        '''
 
-    interval = 1
-    interval_primal = 1
+        interval = 1
 
-    ######################
-    # best primals
-    ######################
-    max_number = 0
-    minGap = 0.1
-    time_start = time.time()
-    jsp_init = False
-    path_cost_feasible = 1e6
-    buffer = []
-    while params_subgrad.gap > minGap and params_subgrad.iter < iter_max:
-        time_start_iter = time.time()
-        # compile adjusted multiplier for each node
-        #   from the original Lagrangian
-        logger.info("dual subproblems begins")
-        update_yvc_multiplier(multiplier)
-        # LR: train sub-problems solving
-        path_cost_LR = 0
-        subgradient_dict = {}
-        node_occupy_dict = defaultdict(lambda: {"a": 0, "s": 0, "p": 0})
-        for train in train_list:
-            train.update_arc_multiplier(option=params_subgrad.dual_method, gamma=params_subgrad.gamma)
-            train.save_prev_lr_path()
-            train.opt_path_LR, train.opt_cost_LR, train.opt_cost_multiplier = train.shortest_path()
-            path_cost_LR += train.opt_cost_LR
-            update_node_occupy_dict(node_occupy_dict, train)
-        subgradient_dict = update_subgradient_dict(node_occupy_dict)
-        logger.info(f"dual subproblems finished")
+        ######################
+        # best primals
+        ######################
+        max_number = 0
+        minGap = 0.1
+        time_start = time.time()
+        jsp_init = False
+        path_cost_feasible = 1e6
+        buffer = []
+        while params_subgrad.iter < iter_max:
+            time_start_iter = time.time()
+            # compile adjusted multiplier for each node
+            #   from the original Lagrangian
+            update_yvc_multiplier(multiplier)
+            multiplier_norm_1, multiplier_norm_2, multiplier_norm_inf = update_dual_excess(multiplier)
+            params_subgrad.multipliers[0].append(multiplier_norm_1)
+            params_subgrad.multipliers[1].append(multiplier_norm_2)
+            params_subgrad.multipliers[2].append(multiplier_norm_inf)
+            # LR: train sub-problems solving
+            path_cost_LR = 0
+            subgradient_dict = {}
+            node_occupy_dict = defaultdict(lambda: {"a": 0, "s": 0, "p": 0})
+            for train in train_list:
+                train.update_arc_multiplier(option=params_subgrad.dual_method, gamma=params_subgrad.gamma)
+                train.save_prev_lr_path()
+                train.opt_path_LR, train.opt_cost_LR, train.opt_cost_multiplier = train.shortest_path()
+                path_cost_LR += train.opt_cost_LR
+                update_node_occupy_dict(node_occupy_dict, train)
+            subgradient_dict = update_subgradient_dict(node_occupy_dict)
+            norm_1, norm_2, norm_inf = update_primal_infeasibility(subgradient_dict)
+            params_subgrad.norms[0].append(norm_1)
+            params_subgrad.norms[1].append(norm_2)
+            params_subgrad.norms[2].append(norm_inf)
 
-        if params_subgrad.iter % interval_primal != 0:  # or iter == iter_max - 1:
-            logger.info(f"no primal stage this iter: {params_subgrad.iter}")
-        else:
-            logger.info("primal stage begins")
-            # feasible solutions
-            feasible_provider, path_cost_feasible, count, not_feasible_trains, buffer = primal_heuristic(
-                train_list,
-                safe_int,
-                jsp_init,
-                buffer,
-                method=params_subgrad.primal_heuristic_method,
-                params_sys=params_sys
-            )
-            params_subgrad.feasible_provider = feasible_provider
-            jsp_init = True
-            logger.info(f"maximum cardinality of feasible paths: {count}")
-            logger.info(f"infeasible trains: {not_feasible_trains}")
-            logger.info("primal stage finished")
+            # check feasibility
+            # check_dual_feasibility(subgradient_dict, multiplier, train_list, LB)
+            lb = path_cost_LR - sum(v for d in multiplier.values() for v in d.values())
+            params_subgrad.update_bound(lb)
+            params_subgrad.update_incumbent(path_cost_feasible)
+            params_subgrad.update_gap()
 
-            # update best primal solution
-            if count > max_number:
-                logger.info("best primal solution updated")
-                params_subgrad.max_number = max_number = count
-                for idx, train in enumerate(train_list):
-                    train.best_path = train.feasible_path
-                    train.is_best_feasible = train.is_feasible
-                    if not train.is_best_feasible:
-                        continue
-                    for node in train.best_path:
-                        train.timetable[node[0]] = node[1]
-                uo.plot_timetables_h5(train_list, miles, station_list, param_sys=params_sys,
-                                      param_subgrad=params_subgrad)
+            # update lagrangian multipliers
+            update_step_size(params_subgrad, method='constant', alpha=params_subgrad.alpha)
+            update_lagrangian_multipliers(params_subgrad.alpha, subgradient_dict)
 
-        # check feasibility
-        # check_dual_feasibility(subgradient_dict, multiplier, train_list, LB)
-        lb = path_cost_LR - sum(v for d in multiplier.values() for v in d.values())
-        params_subgrad.update_bound(lb)
-        params_subgrad.update_incumbent(path_cost_feasible)
-        params_subgrad.update_gap()
+            params_subgrad.iter += 1
 
-        # update lagrangian multipliers
-        update_step_size(params_subgrad, method='polyak')
-        update_lagrangian_multipliers(params_subgrad.alpha, subgradient_dict)
+            if params_subgrad.iter % interval == 0:
+                time_end_iter = time.time()
+                logger.info(
+                    f"iter#: {params_subgrad.iter}, step:{params_subgrad.alpha:.4f}, lb: [{params_subgrad.lb_arr[-1]:.3e}], \n"
+                    f"||(Ax-b)+||_1: {norm_1:.2f}, ||(Ax-b)+||_2: {norm_2:.2f}, ||(Ax-b)+||_inf: {norm_inf}, \n"
+                    f"||lamdba||_1: {multiplier_norm_1:.2f}, ||lamdba||_2: {multiplier_norm_2:.2f}, ||lamdba||_inf: {multiplier_norm_inf:.2f}, \n"
+                )
 
-        params_subgrad.iter += 1
-
-        if params_subgrad.iter % interval == 0:
-            logger.info(f"subgrad params: {params_subgrad.__dict__}")
-            time_end_iter = time.time()
-            logger.info(
-                f"time:{time_end_iter - time_start:.3e}/{time_end_iter - time_start_iter:.2f}, iter#: {params_subgrad.iter:.2e}, step:{params_subgrad.alpha:.4f}, gap: {params_subgrad.gap:.2%} @[{params_subgrad.lb_arr[-1]:.3e} - {params_subgrad.ub_arr[-1]:.3e}]"
-            )
-
-    end_time = time.time()
-    time_elapsed = end_time - start_time
-    logger.info(f"# of iterations {params_subgrad.iter} in {time_elapsed: .3e} seconds")
-    uo.plot_convergence(param_sys=params_sys, param_subgrad=params_subgrad)
+        end_time = time.time()
+        time_elapsed = end_time - start_time
+        logger.info(f"# of iterations {params_subgrad.iter} in {time_elapsed: .3e} seconds")
+        uo.plot_convergence(param_sys=params_sys, param_subgrad=params_subgrad)
