@@ -78,10 +78,10 @@ def plot_timetables_h5(train_list, miles, station_list, param_sys: SysParams, pa
                        selective: List = None):
     import plotly.graph_objects as go
 
-    fig = go.Figure(layout=go.Layout(
-        title=f"Best primal solution of # trains, station, periods: ({len(train_list)}, {param_sys.station_size}, {param_sys.time_span})\n"
-              f"Number of trains {param_subgrad.max_number}")
-    )
+    fig = go.Figure()
+
+    plotted = []
+    universe = [tr.traNo for tr in train_list]
     for i in range(len(train_list)):
         train = train_list[i]
         if selective is not None and train.traNo not in selective:
@@ -106,6 +106,14 @@ def plot_timetables_h5(train_list, miles, station_list, param_sys: SysParams, pa
             line={"dash": "solid"},
             name=f"train-{train.traNo}:{train.speed}",
         )
+        plotted.append(train.traNo)
+
+    unplotted = set(universe).difference(plotted)
+    fig.update_layout(
+        title=f"Best primal solution of # trains, station, periods: ({len(train_list)}, {param_sys.station_size}, {param_sys.time_span})\n"
+              f"Number of trains {param_subgrad.max_number} \n"
+              f"Failed: {len(unplotted)}"
+    )
     fig.update_xaxes(title="minutes",
                      tickvals=np.arange(0, param_sys.time_span, param_sys.time_span / 30).round(2))
     fig.update_yaxes(title="miles",

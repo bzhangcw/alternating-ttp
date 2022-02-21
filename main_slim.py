@@ -5,13 +5,14 @@ import time
 from collections import defaultdict
 from typing import *
 
+import jsp.model
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import util_output as uo
 from Train import *
 from jsp.main import main_jsp
-from gurobipy import GRB
+from gurobipy import GRB, Var
 
 logging.basicConfig(format="%(asctime)s: %(message)s", level=logging.INFO)
 logger = logging.getLogger("railway")
@@ -286,7 +287,7 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp", param
             occupied_arcs[k].add(v)
         incompatible_arcs.update(_this_new_incompatible_arcs)
         path_cost_feasible += train.feasible_cost
-
+    logger.info(f"seq maximum cardinality: {count}")
     if method == "jsp":
         # path_method = "dual"  # use primal path
         path_method = "primal"
@@ -339,7 +340,8 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp", param
             model.remove(fix_x_constrs)
         if model.status not in [GRB.INF_OR_UNBD, GRB.INFEASIBLE, GRB.UNBOUNDED] and model.SolCount > 0:
             jsp_count = 0
-            x_sol = {k: 1 if np.isreal(v) else v.x for k, v in x_var.items()}
+            x_sol = {k: v.x if isinstance(v, Var) else v for k, v in x_var.items()}
+            jsp_not_feasible_trains = [k for k, v in x_sol.items() if v == 0]
             d_sol = {tr: {s: v.x for s, v in vl.items()} for tr, vl in d_var.items() if x_sol[tr] == 1}
             a_sol = {tr: {s: v.x for s, v in vl.items()} for tr, vl in a_var.items() if x_sol[tr] == 1}
 
@@ -359,14 +361,24 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp", param
 
                 _path = list(_gen_path(_arr, _dep))
                 tr.feasible_path_jsp = _path
-                if _path[-2][-1] <= params_sys.time_span:
+                if (len(_path) > 2) and _path[-2][-1] <= params_sys.time_span:
+                    # double check
                     jsp_count += 1
+
             # if jsp is better.
             if jsp_count > count:
                 count = jsp_count
-                for tr in train_list:
-                    tr.feasible_path = tr.feasible_path_jsp
+                not_feasible_trains = jsp_not_feasible_trains
                 feasible_provider = 'jsp'
+                for tr in train_list:
+                    if x_sol[tr] == 1:
+                        tr.feasible_path = tr.feasible_path_jsp
+                        tr.is_feasible = True
+                    else:
+                        tr.feasible_path = []
+                        tr.is_feasible = False
+            logger.info(f"assert info: {len(jsp_not_feasible_trains) + jsp_count}")
+            logger.info(f"jsp maximum cardinality: {jsp_count}")
 
     elif method == "seq":
         pass
@@ -425,7 +437,6 @@ if __name__ == '__main__':
         tr.create_subgraph(sec_times_all[tr.speed], time_span)
 
     logger.info("step 2")
-    logger.info("step 3")
     logger.info(f"actual train size {len(train_list)}")
 
     '''
@@ -492,6 +503,7 @@ if __name__ == '__main__':
                 logger.info("best primal solution updated")
                 params_subgrad.max_number = max_number = count
                 for idx, train in enumerate(train_list):
+                    train.timetable = {}
                     train.best_path = train.feasible_path
                     train.is_best_feasible = train.is_feasible
                     if not train.is_best_feasible:
