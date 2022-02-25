@@ -1,7 +1,7 @@
 import pandas as pd
 
 from jsp.Train import Train
-from jsp.util import time2num
+from jsp.util import time2num, num2time
 
 
 def read_station(path):
@@ -57,7 +57,8 @@ def read_train(path, station_list, g, h, miles):
     """
     df = pd.read_excel(path)
     df = df.rename(columns={k: str(k) for k in df.columns})
-    train_series = df.apply(lambda row: parse_row_to_train(row, station_list, g, h, miles), axis=1)
+    train_series = df.apply(lambda row: parse_row_to_train(
+        row, station_list, g, h, miles), axis=1)
     train_list = train_series.to_list()
     return train_list
 
@@ -94,42 +95,39 @@ def read_station_extra(path):
 
 def read_safe_interval(path):
     """
-    return aa_speed, dd_speed, pp_speed, ap_speed, pa_speed, dp_speed, pd_speed
+    return dict of safe_interval
+    key in ['aa', 'dd', 'pp', 'ap', 'pa', 'dp', 'pd']
 
-    aa_speed[speed][station] 安全间隔到达时
+    for example: safe_interval['aa'][speed][station] 到到安全间隔到达时
     """
     df = pd.read_excel(path)
     df['车站'] = df['车站'].astype(str)
 
-    aa_speed = {}
-    dd_speed = {}
-    pp_speed = {}
-    ap_speed = {}
-    pa_speed = {}
-    dp_speed = {}
-    pd_speed = {}
+    pairs = ['aa', 'dd', 'pp', 'ap', 'pa', 'dp', 'pd']
+    safe_interval = {}
+    for p in pairs:
+        safe_interval[p] = {}
 
     for speed in [300, 350]:
         df_speed = df[df['speed'] == speed].set_index('车站')
-        aa_speed[speed] = df_speed['到到安全间隔'].to_dict()
-        dd_speed[speed] = df_speed['发发安全间隔'].to_dict()
-        pp_speed[speed] = df_speed['通通安全间隔'].to_dict()
-        ap_speed[speed] = df_speed['到通安全间隔'].to_dict()
-        pa_speed[speed] = df_speed['通到安全间隔'].to_dict()
-        dp_speed[speed] = df_speed['发通安全间隔'].to_dict()
-        pd_speed[speed] = df_speed['通发安全间隔'].to_dict()
+        safe_interval['aa'][speed] = df_speed['到到安全间隔'].to_dict()
+        safe_interval['dd'][speed] = df_speed['发发安全间隔'].to_dict()
+        safe_interval['pp'][speed] = df_speed['通通安全间隔'].to_dict()
+        safe_interval['ap'][speed] = df_speed['到通安全间隔'].to_dict()
+        safe_interval['pa'][speed] = df_speed['通到安全间隔'].to_dict()
+        safe_interval['dp'][speed] = df_speed['发通安全间隔'].to_dict()
+        safe_interval['pd'][speed] = df_speed['通发安全间隔'].to_dict()
 
+    aa_speed, dd_speed, pp_speed, ap_speed, pa_speed, dp_speed, pd_speed = safe_interval['aa'], safe_interval['dd'], safe_interval['pp'], \
+                                                                           safe_interval['ap'], safe_interval['pa'], safe_interval['dp'], \
+                                                                           safe_interval['pd']
     return aa_speed, dd_speed, pp_speed, ap_speed, pa_speed, dp_speed, pd_speed
 
 
-def read_train_table(path, up=0, encoding='gbk'):
-    # 站名 up=1
-    station_name_list = ['北京南', '廊坊', '京津线路所', '津沪线路所', '天津南', '沧州西', '德州东', '济南西', '崔马庄线路所', '泰安',
-                         '曲阜东', '滕州东', '枣庄', '徐州东', '宿州东', '蚌埠南', '定远', '滁州', '扬州线路所', '南京南',
-                         '秦淮河线路所', '镇江南', '丹阳北', '常州北', '无锡东', '苏州北', '昆山南', '黄渡线路所', '上海虹桥']
-
+def read_train_table(path, station_name_list, up=0, encoding='gbk'):
     df = pd.read_csv(path, encoding=encoding)
-    df.loc[:, '车站编号'] = df['站名'].apply(lambda name: str(station_name_list.index(name) + 1))
+    df.loc[:, '车站编号'] = df['站名'].apply(
+        lambda name: str(station_name_list.index(name) + 1))
     grouped = df.groupby('车次')
 
     train_table = {}
@@ -138,6 +136,8 @@ def read_train_table(path, up=0, encoding='gbk'):
             train_id = trn / 2
         elif up == 1:
             train_id = (trn + 1) / 2
+        else:
+            raise ValueError("the argument up should be 0 or 1.")
         train_table[train_id] = {}
 
         k = 0  # 是否是起始站
@@ -145,13 +145,53 @@ def read_train_table(path, up=0, encoding='gbk'):
             station = group.loc[row, '车站编号']
             train_table[train_id][station] = {}
             if k == 0:  # 始发站
-                train_table[train_id][station]['dep'] = round(time2num(group.loc[row, '发点']), 2)
-                train_table[train_id][station]['arr'] = round(time2num(group.loc[row, '发点']), 2)
+                train_table[train_id][station]['dep'] = round(
+                    time2num(group.loc[row, '发点']), 2)
+                train_table[train_id][station]['arr'] = round(
+                    time2num(group.loc[row, '发点']), 2)
             elif k == len(group) - 1:  # 终点站
-                train_table[train_id][station]['dep'] = round(time2num(group.loc[row, '到点']), 2)
-                train_table[train_id][station]['arr'] = round(time2num(group.loc[row, '到点']), 2)
+                train_table[train_id][station]['dep'] = round(
+                    time2num(group.loc[row, '到点']), 2)
+                train_table[train_id][station]['arr'] = round(
+                    time2num(group.loc[row, '到点']), 2)
             else:
-                train_table[train_id][station]['dep'] = round(time2num(group.loc[row, '发点']), 2)
-                train_table[train_id][station]['arr'] = round(time2num(group.loc[row, '到点']), 2)
+                train_table[train_id][station]['dep'] = round(
+                    time2num(group.loc[row, '发点']), 2)
+                train_table[train_id][station]['arr'] = round(
+                    time2num(group.loc[row, '到点']), 2)
             k = k + 1
     return train_table
+
+
+def write_train_table(path, train_table, station_name_list, direction='up', sort=True, encoding='utf-8'):
+    """
+    列: 车次ID, 车次, 站序, 站名, 到点, 发点
+    """
+
+    df = pd.DataFrame(columns=['车次ID', '车次', '站序', '站名', '到点', '发点'])
+
+    train_list = list(train_table.keys())
+    if sort:
+        train_list.sort(key=lambda tr: int(tr), reverse=False)
+
+    for train_id in train_list:
+        if direction == 'up':
+            trn = 2 * train_id
+        elif direction == 'down':
+            trn = 2 * train_id - 1
+        else:
+            raise ValueError("The direction of train should be up or down.")
+        k = 0
+        train_route = train_table[train_id]
+        for station, times in train_route.items():
+            row = {'车次ID': train_id,
+                   '车次': trn,
+                   '站序': k,
+                   '站名': station_name_list[int(station) - 1],
+                   '到点': num2time(times['arr']),
+                   '发点': num2time(times['dep'])}
+            df = df.append(row, ignore_index=True)
+            k = k + 1
+
+    df.to_csv(path, encoding=encoding, index=False)
+    return

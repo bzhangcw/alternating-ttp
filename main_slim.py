@@ -11,7 +11,9 @@ import numpy as np
 import pandas as pd
 import util_output as uo
 from Train import *
-from jsp.main import main_jsp
+from jsp.main import main_jsp, station_name_list
+from jsp.util import get_train_table
+from jsp.dataLoader import write_train_table
 from gurobipy import GRB, Var
 
 logging.basicConfig(format="%(asctime)s: %(message)s", level=logging.INFO)
@@ -388,7 +390,9 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp", param
                         tr.is_feasible = False
             logger.info(f"assert info: {len(jsp_not_feasible_trains) + jsp_count}")
             logger.info(f"jsp maximum cardinality: {jsp_count}")
-
+            train_table = get_train_table(train_list, d_var, a_var)
+            direction = "up" if params_sys.up == 1 else "down"
+            write_train_table(params_sys.subdir_result + f"/lr_{direction}.csv", train_table, station_name_list, direction)
     elif method == "seq":
         pass
     else:
