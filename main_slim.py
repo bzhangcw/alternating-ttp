@@ -392,7 +392,7 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp", param
             logger.info(f"jsp maximum cardinality: {jsp_count}")
             train_table = get_train_table(train_list, d_var, a_var)
             direction = "up" if params_sys.up == 1 else "down"
-            write_train_table(params_sys.subdir_result + f"/lr_{direction}.csv", train_table, station_name_list, direction)
+            write_train_table(params_sys.fdir_result + f"/lr_{direction}.csv", train_table, station_name_list, direction)
     elif method == "seq":
         pass
     else:
