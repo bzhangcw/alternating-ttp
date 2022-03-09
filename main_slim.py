@@ -197,16 +197,20 @@ def update_yvc_multiplier(multiplier):
                                                       + sum(multiplier[v_station, t - dt]["sp"] for dt in range(1, min(interval2, t + 1)))
 
 
-def update_subgradient_dict(node_occupy_dict):
+def update_subgradient_dict(node_occupy_dict, option="lagrange", z_vars=None):
     subgradient_dict = {}
     for node, multi in multiplier.items():
         subgradient_dict[node] = {}
         for cc, mu in multi.items():
             station = node[0].replace("_", "")
             interval = max(safe_int[cc][station, 350], safe_int[cc][station, 300])
+            b = 1 if option != "pdhg_alm" else z_vars[node][cc]
             subgradient_dict[node][cc] = node_occupy_dict[node][cc[0]] \
                                          + sum(node_occupy_dict[node[0], node[1] + t][cc[1]] for t in range(1, min(interval, time_span - node[1]))) \
-                                         - 1
+                                         - b
+            if option == "pdhg_alm":
+                z_vars[node][cc] = min(b, multiplier[node][cc] / params_subgrad.alpha + subgradient_dict[node][cc] + b)
+
     return subgradient_dict
 
 
@@ -220,13 +224,13 @@ def update_dual_excess(multiplier):
     return np.linalg.norm(multipliers, 1), np.linalg.norm(multipliers, 2), np.max(multipliers)
 
 
-def update_node_occupy_dict(node_occupy_dict, train, option="lagrange", alpha=1):
-    if option == "lagrange":
+def update_node_occupy_dict(node_occupy_dict, train, option="lagrange", beta=1):
+    if option in ("lagrange", "pdhg_alm"):
         for node in train.opt_path_LR[1:-1]:  # z_{j v}
             node_occupy_dict[node][train.v_sta_type[node[0]]] += 1
     elif option == "pdhg":
         for node in train.opt_path_LR[1:-1]:
-            node_occupy_dict[node][train.v_sta_type[node[0]]] += 1 + alpha * (1 - (node in train.opt_path_LR_prev_dict))
+            node_occupy_dict[node][train.v_sta_type[node[0]]] += 1 + beta * (1 - (node in train.opt_path_LR_prev_dict))
     else:
         raise ValueError(f"option {option} is not supported")
 
@@ -405,7 +409,7 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp", param
     return feasible_provider, path_cost_feasible, count, not_feasible_trains, buffer
 
 
-def init_multipliers(multiplier, v_station_list):
+def init_multipliers(multiplier, v_station_list, option="lagrange", z_vars=None):
     for sta in v_station_list:  # 循环车站
         for t in range(0, time_span):  # 循环时刻t
             if sta not in ["s_", "_t"]:
@@ -415,6 +419,17 @@ def init_multipliers(multiplier, v_station_list):
                     multiplier[sta, t] = {"ss": 0, "sp": 0, "ps": 0}
                 else:
                     raise TypeError(f"virtual station has the wrong name: {sta}")
+    if option == "pdhg_alm":
+        assert z_vars is not None
+        for sta in v_station_list:  # 循环车站
+            for t in range(0, time_span):  # 循环时刻t
+                if sta not in ["s_", "_t"]:
+                    if sta.startswith("_"):  # arrival
+                        z_vars[sta, t] = {"aa": 1, "ap": 1, "pa": 1, "pp": 1}
+                    elif sta.endswith("_"):  # departure
+                        z_vars[sta, t] = {"ss": 1, "sp": 1, "ps": 1}
+                    else:
+                        raise TypeError(f"virtual station has the wrong name: {sta}")
     return dict(multiplier)
 
 
@@ -477,7 +492,7 @@ if __name__ == '__main__':
         '''
         initialization
         '''
-        multiplier = init_multipliers(multiplier, v_station_list)
+        multiplier = init_multipliers(multiplier, v_station_list, params_subgrad.dual_method, z_vars)
 
         '''
         Lagrangian relaxation approach
@@ -512,8 +527,8 @@ if __name__ == '__main__':
                 train.save_prev_lr_path()
                 train.opt_path_LR, train.opt_cost_LR, train.opt_cost_multiplier = train.shortest_path()
                 path_cost_LR += train.opt_cost_LR
-                update_node_occupy_dict(node_occupy_dict, train)
-            subgradient_dict = update_subgradient_dict(node_occupy_dict)
+                update_node_occupy_dict(node_occupy_dict, train, params_subgrad.dual_method, params_subgrad.beta)
+            subgradient_dict = update_subgradient_dict(node_occupy_dict, params_subgrad.dual_method, z_vars)
             norm_1, norm_2, norm_inf = update_primal_infeasibility(subgradient_dict)
             params_subgrad.norms[0].append(norm_1)
             params_subgrad.norms[1].append(norm_2)

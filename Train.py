@@ -340,7 +340,7 @@ class Train(object):
                        'multiplier': xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]]}) if j[0] not in ["s_", "_t"] else
                      (i, j, {"price": v["weight"], 'multiplier': 0})
                      for i, j, v in subg.edges(data=True)]
-        elif option == "pdhg":
+        elif option in ("pdhg", "pdhg_alm"):
             price = [(i, j,
                       {'price': v['weight'] + xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]] + gamma * (0.5 - ((i, j) in self.opt_path_LR_dict)),
                        'multiplier': xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]] + gamma * (0.5 - ((i, j) in self.opt_path_LR_dict))}) if j[0] not in ["s_", "_t"] else
@@ -531,7 +531,7 @@ class Train(object):
             w = e['weight']
             if option == "lagrange":
                 e["multiplier"] = xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]] if j[0] not in ["s_", "_t"] else 0
-            elif option == "pdhg":
+            elif option in ("pdhg", "pdhg_alm"):
                 e["multiplier"] = xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]] + gamma * (0.5 - ((i, j) in self.opt_path_LR_dict)) if j[0] not in ["s_", "_t"] else 0
             else:
                 raise ValueError(f"option {option} is not supported")

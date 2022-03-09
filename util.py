@@ -25,6 +25,7 @@ node_prec_map = defaultdict(list)
 # original Lagrangian
 # multiplier = defaultdict(lambda: {"aa": 0, "ap": 0, "ss": 0, "sp": 0, "pa": 0, "ps": 0, "pp": 0})  # each (station, t)
 multiplier = dict()  # each (station, t)
+z_vars = dict()
 # node multiplier
 yv_multiplier = {}  # the multiplier of each v
 yvc_multiplier = defaultdict(lambda: {"a": 0, "s": 0, "p": 0})  # the multiplier of each v with type c
@@ -75,6 +76,7 @@ class SubgradParam(object):
     def __init__(self):
         self.kappa = 0.2
         self.alpha = 1.0
+        self.beta = 1
         self.gamma = 0.1  # parameter for argmin x
         self.changed = 0
         self.num_stuck = 0
