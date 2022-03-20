@@ -173,14 +173,18 @@ def update_yvc_multiplier(multiplier):
                 interval = max(safe_int[c + c][station, 350], safe_int[c + c][station, 300])
                 if c == "a":
                     interval2 = max(safe_int["pa"][station, 350], safe_int["pa"][station, 300])
-                    yvc_multiplier[v_station, t][c] = sum(multiplier[v_station, t - dt]["aa"] for dt in range(min(interval, t + 1))) \
+                    yvc_multiplier[v_station, t][c] = sum(
+                        multiplier[v_station, t - dt]["aa"] for dt in range(min(interval, t + 1))) \
                                                       + multiplier[v_station, t]["ap"] \
-                                                      + sum(multiplier[v_station, t - dt]["pa"] for dt in range(1, min(interval2, t + 1)))
+                                                      + sum(
+                        multiplier[v_station, t - dt]["pa"] for dt in range(1, min(interval2, t + 1)))
                 elif c == "p":
                     interval2 = max(safe_int["ap"][station, 350], safe_int["ap"][station, 300])
-                    yvc_multiplier[v_station, t][c] = sum(multiplier[v_station, t - dt]["pp"] for dt in range(min(interval, t + 1))) \
+                    yvc_multiplier[v_station, t][c] = sum(
+                        multiplier[v_station, t - dt]["pp"] for dt in range(min(interval, t + 1))) \
                                                       + multiplier[v_station, t]["pa"] \
-                                                      + sum(multiplier[v_station, t - dt]["ap"] for dt in range(1, min(interval2, t + 1)))
+                                                      + sum(
+                        multiplier[v_station, t - dt]["ap"] for dt in range(1, min(interval2, t + 1)))
                 else:
                     yvc_multiplier[v_station, t][c] = 0
         elif v_station.endswith("_"):
@@ -188,13 +192,16 @@ def update_yvc_multiplier(multiplier):
                 interval = max(safe_int[c + c][station, 350], safe_int[c + c][station, 300])
                 if c == "s":
                     interval2 = max(safe_int["ps"][station, 350], safe_int["ps"][station, 300])
-                    yvc_multiplier[v_station, t][c] = sum(multiplier[v_station, t - dt]["ss"] for dt in range(min(interval, t + 1))) \
+                    yvc_multiplier[v_station, t][c] = sum(
+                        multiplier[v_station, t - dt]["ss"] for dt in range(min(interval, t + 1))) \
                                                       + multiplier[v_station, t]["sp"] \
-                                                      + sum(multiplier[v_station, t - dt]["ps"] for dt in range(1, min(interval2, t + 1)))
+                                                      + sum(
+                        multiplier[v_station, t - dt]["ps"] for dt in range(1, min(interval2, t + 1)))
                 elif c == "p":
                     interval2 = max(safe_int["sp"][station, 350], safe_int["sp"][station, 300])
                     yvc_multiplier[v_station, t][c] = multiplier[v_station, t]["ps"] \
-                                                      + sum(multiplier[v_station, t - dt]["sp"] for dt in range(1, min(interval2, t + 1)))
+                                                      + sum(
+                        multiplier[v_station, t - dt]["sp"] for dt in range(1, min(interval2, t + 1)))
 
 
 def update_subgradient_dict(node_occupy_dict, option="lagrange", z_vars=None):
@@ -205,9 +212,12 @@ def update_subgradient_dict(node_occupy_dict, option="lagrange", z_vars=None):
             station = node[0].replace("_", "")
             interval = max(safe_int[cc][station, 350], safe_int[cc][station, 300])
             b = 1 if option != "pdhg_alm" else z_vars[node][cc]
-            subgradient_dict[node][cc] = node_occupy_dict[node][cc[0]] \
-                                         + sum(node_occupy_dict[node[0], node[1] + t][cc[1]] for t in range(1, min(interval, time_span - node[1]))) \
-                                         - b
+            subgradient_dict[node][cc] = \
+                node_occupy_dict[node][cc[0]] \
+                + sum(
+                    node_occupy_dict[node[0], node[1] + t][cc[1]]
+                    for t in range(1, min(interval, time_span - node[1]))
+                ) - b
             if option == "pdhg_alm":
                 z_vars[node][cc] = min(b, multiplier[node][cc] / params_subgrad.alpha + subgradient_dict[node][cc] + b)
 
@@ -245,9 +255,14 @@ def update_step_size(params_subgrad, method="polyak", alpha=None):
             params_subgrad.alpha = 0.5 / 20
     elif method == "polyak":
         subg_norm = np.linalg.norm([v for d in subgradient_dict.values() for v in d.values()]) ** 2
-        params_subgrad.alpha = params_subgrad.kappa * (params_subgrad.ub_arr[-1] - params_subgrad.lb_arr[-1]) / subg_norm
+        params_subgrad.alpha = params_subgrad.kappa * (
+                params_subgrad.ub_arr[-1] - params_subgrad.lb_arr[-1]) / subg_norm
     elif method == "constant":
         params_subgrad.alpha = alpha
+    # increase
+    elif method == "power":
+        params_subgrad.alpha *= 0.995
+        params_subgrad.gamma *= 0.995
     else:
         raise ValueError(f"undefined method {method}")
 
@@ -479,16 +494,24 @@ if __name__ == '__main__':
     for tr in train_list:
         tr.create_subgraph(sec_times_all[tr.speed], time_span)
 
-    alpha_list = np.logspace(-3, 1, num=10)
-    gamma_list = np.logspace(-3, 1, num=10)
-    for alpha, gamma in product(alpha_list, gamma_list):
+    alpha_list = np.logspace(-1, 1, num=5)
+    print(alpha_list)
+
+    # an underestimate
+    hat_norm = 50
+    # gamma_list = np.logspace(1, 4, num=5)
+    # for alpha, gamma in product(alpha_list, gamma_list):
+    for alpha in alpha_list:
         logger.info("Start")
+        alpha = alpha / hat_norm #np.sqrt(tr.subgraph.ecount())
+        gamma = 2 * alpha * hat_norm # np.sqrt(tr.subgraph.ecount())
         for tr in train_list:
             tr.reset()
         params_subgrad.reset()
         params_subgrad.alpha = alpha
         params_subgrad.gamma = gamma
         logger.info(f"alpha={alpha}, gamma={gamma}")
+        print(params_subgrad.__dict__)
         '''
         initialization
         '''
@@ -522,6 +545,7 @@ if __name__ == '__main__':
             path_cost_LR = 0
             subgradient_dict = {}
             node_occupy_dict = defaultdict(lambda: {"a": 0, "s": 0, "p": 0})
+
             for train in train_list:
                 train.update_arc_multiplier(option=params_subgrad.dual_method, gamma=params_subgrad.gamma)
                 train.save_prev_lr_path()
@@ -542,7 +566,7 @@ if __name__ == '__main__':
             params_subgrad.update_gap()
 
             # update lagrangian multipliers
-            update_step_size(params_subgrad, method='constant', alpha=params_subgrad.alpha)
+            update_step_size(params_subgrad, method='power', alpha=params_subgrad.alpha)
             update_lagrangian_multipliers(params_subgrad.alpha, subgradient_dict)
 
             params_subgrad.iter += 1
@@ -550,7 +574,7 @@ if __name__ == '__main__':
             if params_subgrad.iter % interval == 0:
                 time_end_iter = time.time()
                 logger.info(
-                    f"iter#: {params_subgrad.iter}, step:{params_subgrad.alpha:.4f}, lb: [{params_subgrad.lb_arr[-1]:.3e}], \n"
+                    f"iter#: {params_subgrad.iter}, step:{params_subgrad.alpha:.3e}, {params_subgrad.gamma: .3e}, lb: [{params_subgrad.lb_arr[-1]:.3e}], \n"
                     f"||(Ax-b)+||_1: {norm_1:.2f}, ||(Ax-b)+||_2: {norm_2:.2f}, ||(Ax-b)+||_inf: {norm_inf}, \n"
                     f"||lamdba||_1: {multiplier_norm_1:.2f}, ||lamdba||_2: {multiplier_norm_2:.2f}, ||lamdba||_inf: {multiplier_norm_inf:.2f}, \n"
                 )
