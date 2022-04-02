@@ -206,26 +206,30 @@ def update_yvc_multiplier(multiplier):
 
 def update_subgradient_dict(node_occupy_dict, option="lagrange", z_vars=None):
     subgradient_dict = {}
+    primal_feas = {}
     for node, multi in multiplier.items():
         subgradient_dict[node] = {}
+        primal_feas[node] = {}
         for cc, mu in multi.items():
             station = node[0].replace("_", "")
             interval = max(safe_int[cc][station, 350], safe_int[cc][station, 300])
-            b = 1 if option != "pdhg_alm" else z_vars[node][cc]
-            subgradient_dict[node][cc] = \
-                node_occupy_dict[node][cc[0]] \
-                + sum(
-                    node_occupy_dict[node[0], node[1] + t][cc[1]]
-                    for t in range(1, min(interval, time_span - node[1]))
-                ) - b
-            if option == "pdhg_alm":
-                z_vars[node][cc] = min(b, multiplier[node][cc] / params_subgrad.alpha + subgradient_dict[node][cc] + b)
+            if option != "pdhg_alm":
+                raise ValueError("only support pdhg_alm")
+            _Ax = node_occupy_dict[node][cc[0]] \
+                  + sum(
+                node_occupy_dict[node[0], node[1] + t][cc[1]]
+                for t in range(1, min(interval, time_span - node[1]))
+            )
+            _z = z_vars[node][cc] = min(1, multiplier[node][cc] / params_subgrad.alpha + _Ax)
 
-    return subgradient_dict
+            subgradient_dict[node][cc] = _Ax - _z
+            primal_feas[node][cc] = max(_Ax - 1, 0)
+
+    return subgradient_dict, primal_feas
 
 
-def update_primal_infeasibility(subgradient_dict):
-    subgs = [max(d, 0) for subg_dict in subgradient_dict.values() for d in subg_dict.values()]
+def update_primal_infeasibility(primal_feas):
+    subgs = [d for subg_dict in primal_feas.values() for d in subg_dict.values()]
     return np.linalg.norm(subgs, 1), np.linalg.norm(subgs, 2), np.max(subgs)
 
 
@@ -241,6 +245,11 @@ def update_node_occupy_dict(node_occupy_dict, train, option="lagrange", beta=1):
     elif option == "pdhg":
         for node in train.opt_path_LR[1:-1]:
             node_occupy_dict[node][train.v_sta_type[node[0]]] += 1 + beta * (1 - (node in train.opt_path_LR_prev_dict))
+    elif option == "dual_prox":
+        for (i, j), v in train.opt_path_LR.items():
+            if j[0] == '_t':
+                continue
+            node_occupy_dict[j][train.v_sta_type[j[0]]] += v
     else:
         raise ValueError(f"option {option} is not supported")
 
@@ -259,10 +268,11 @@ def update_step_size(params_subgrad, method="polyak", alpha=None):
                 params_subgrad.ub_arr[-1] - params_subgrad.lb_arr[-1]) / subg_norm
     elif method == "constant":
         params_subgrad.alpha = alpha
+        params_subgrad.gamma = 1.005
     # increase
     elif method == "power":
-        params_subgrad.alpha *= 0.995
-        params_subgrad.gamma *= 0.995
+        # params_subgrad.alpha *= 0.998
+        params_subgrad.gamma *= 1.005
     else:
         raise ValueError(f"undefined method {method}")
 
@@ -494,17 +504,18 @@ if __name__ == '__main__':
     for tr in train_list:
         tr.create_subgraph(sec_times_all[tr.speed], time_span)
 
-    alpha_list = np.logspace(-1, 1, num=5)
+    alpha_list = [0.05, 0.2, 0.5, 1]
     print(alpha_list)
 
     # an underestimate
-    hat_norm = 50
+    hat_norm = 20
+
     # gamma_list = np.logspace(1, 4, num=5)
     # for alpha, gamma in product(alpha_list, gamma_list):
     for alpha in alpha_list:
         logger.info("Start")
-        alpha = alpha / hat_norm #np.sqrt(tr.subgraph.ecount())
-        gamma = 2 * alpha * hat_norm # np.sqrt(tr.subgraph.ecount())
+        alpha = alpha   # np.sqrt(tr.subgraph.ecount())
+        gamma = 2 # # np.sqrt(tr.subgraph.ecount())
         for tr in train_list:
             tr.reset()
         params_subgrad.reset()
@@ -549,11 +560,12 @@ if __name__ == '__main__':
             for train in train_list:
                 train.update_arc_multiplier(option=params_subgrad.dual_method, gamma=params_subgrad.gamma)
                 train.save_prev_lr_path()
-                train.opt_path_LR, train.opt_cost_LR, train.opt_cost_multiplier = train.shortest_path()
+                train.opt_path_LR, train.opt_cost_LR, train.opt_cost_multiplier = train.shortest_path(
+                    option='dual_prox')
                 path_cost_LR += train.opt_cost_LR
-                update_node_occupy_dict(node_occupy_dict, train, params_subgrad.dual_method, params_subgrad.beta)
-            subgradient_dict = update_subgradient_dict(node_occupy_dict, params_subgrad.dual_method, z_vars)
-            norm_1, norm_2, norm_inf = update_primal_infeasibility(subgradient_dict)
+                update_node_occupy_dict(node_occupy_dict, train, "dual_prox", params_subgrad.beta)
+            subgradient_dict, primal_feas = update_subgradient_dict(node_occupy_dict, params_subgrad.dual_method, z_vars)
+            norm_1, norm_2, norm_inf = update_primal_infeasibility(primal_feas)
             params_subgrad.norms[0].append(norm_1)
             params_subgrad.norms[1].append(norm_2)
             params_subgrad.norms[2].append(norm_inf)

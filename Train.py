@@ -336,14 +336,19 @@ class Train(object):
         subg = self.subgraph
         if option == "lagrange":
             price = [(i, j,
-                      {'price': v['weight'] + xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]],
-                       'multiplier': xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]]}) if j[0] not in ["s_", "_t"] else
+                      {'price': v['weight'] + xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][
+                          self.v_sta_type[j[0]]],
+                       'multiplier': xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][
+                           self.v_sta_type[j[0]]]}) if j[0] not in ["s_", "_t"] else
                      (i, j, {"price": v["weight"], 'multiplier': 0})
                      for i, j, v in subg.edges(data=True)]
         elif option in ("pdhg", "pdhg_alm"):
             price = [(i, j,
-                      {'price': v['weight'] + xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]] + gamma * (0.5 - ((i, j) in self.opt_path_LR_dict)),
-                       'multiplier': xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]] + gamma * (0.5 - ((i, j) in self.opt_path_LR_dict))}) if j[0] not in ["s_", "_t"] else
+                      {'price': v['weight'] + xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][
+                          self.v_sta_type[j[0]]] + gamma * (0.5 - ((i, j) in self.opt_path_LR_dict)),
+                       'multiplier': xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][
+                           self.v_sta_type[j[0]]] + gamma * (0.5 - ((i, j) in self.opt_path_LR_dict))}) if j[0] not in [
+                "s_", "_t"] else
                      (i, j, {"price": v["weight"], 'multiplier': 0})
                      for i, j, v in subg.edges(data=True)]
         else:
@@ -366,8 +371,10 @@ class Train(object):
         for (i, t), c in occupied_nodes.items():
             _type_affix_after = c + self.v_sta_type.get(i, '%')
             _type_affix_before = self.v_sta_type.get(i, '%') + c
-            radius_after = _safe_int[_type_affix_after][i.strip("_"), self.speed] if _type_affix_after in _safe_int else 0
-            radius_before = _safe_int[_type_affix_before][i.strip("_"), self.speed] if _type_affix_before in _safe_int else 0  # todo: use speed of rear train
+            radius_after = _safe_int[_type_affix_after][
+                i.strip("_"), self.speed] if _type_affix_after in _safe_int else 0
+            radius_before = _safe_int[_type_affix_before][
+                i.strip("_"), self.speed] if _type_affix_before in _safe_int else 0  # todo: use speed of rear train
             radius[i, t] = (radius_before, radius_after)
         # ii. then remove nodes defined by radius
         _all_nodes = ((i, t + dlt) for (i, t), (r_b, r_a) in radius.items() for dlt in range(-r_b + 1, r_a))
@@ -530,9 +537,15 @@ class Train(object):
             i, j = e['name']
             w = e['weight']
             if option == "lagrange":
-                e["multiplier"] = xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]] if j[0] not in ["s_", "_t"] else 0
+                e["multiplier"] = xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][
+                    self.v_sta_type[j[0]]] if j[0] not in ["s_", "_t"] else 0
             elif option in ("pdhg", "pdhg_alm"):
-                e["multiplier"] = xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]] + gamma * (0.5 - ((i, j) in self.opt_path_LR_dict)) if j[0] not in ["s_", "_t"] else 0
+                # e["multiplier"] = xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]] + gamma * (0.5 - ((i, j) in self.opt_path_LR_dict)) if j[0] not in ["s_", "_t"] else 0
+                e["multiplier_linear"] = \
+                    xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]] \
+                    - gamma * ((i, j) in self.opt_path_LR_dict) if j[0] not in ["s_", "_t"] else 0
+                e["multiplier_quad"] = gamma * 0.5 if j[0] not in ["s_", "_t"] else 0
+                e["multiplier"] = e["multiplier_linear"] + e["multiplier_quad"]
             else:
                 raise ValueError(f"option {option} is not supported")
             p = w + e["multiplier"]
@@ -553,8 +566,10 @@ class Train(object):
         for (i, t), c in occupied_nodes.items():
             _type_affix_after = c + self.v_sta_type.get(i, '%')
             _type_affix_before = self.v_sta_type.get(i, '%') + c
-            radius_after = _safe_int[_type_affix_after][i.strip("_"), self.speed] if _type_affix_after in _safe_int else 0
-            radius_before = _safe_int[_type_affix_before][i.strip("_"), self.speed] if _type_affix_before in _safe_int else 0  # todo: use speed of rear train
+            radius_after = _safe_int[_type_affix_after][
+                i.strip("_"), self.speed] if _type_affix_after in _safe_int else 0
+            radius_before = _safe_int[_type_affix_before][
+                i.strip("_"), self.speed] if _type_affix_before in _safe_int else 0  # todo: use speed of rear train
             radius[i, t] = (radius_before, radius_after)
         # ii. then remove nodes defined by radius
         _all_nodes = ((i, t + dlt) for (i, t), (r_b, r_a) in radius.items() for dlt in range(-r_b + 1, r_a))
@@ -566,10 +581,17 @@ class Train(object):
         """
         """
         i, j = self.source, self.sink
-        _g = self.subgraph if option == 'dual' else self.subgraph_primal
-        _price = 'price' if option == 'dual' else 'weight'
-        _sink = self._ig_t if option == 'dual' else self._ig_t_primal
+        _g = self.subgraph if option.startswith('dual') else self.subgraph_primal
+        _price = 'price' if option.startswith('dual') else 'weight'
+        _sink = self._ig_t if option.startswith('dual') else self._ig_t_primal
         import warnings
+
+        if option == 'dual_prox':
+            ssp, cost, lag_cost = solve_quad_ssp(_g, self._ig_s, _sink)
+            ssp_literal = {
+                (_g.vs[i]['name'], _g.vs[j]['name']): v for (i, j), v in ssp.items()
+            }
+            return ssp_literal, cost, lag_cost
 
         with warnings.catch_warnings():
             warnings.filterwarnings('error')
@@ -584,8 +606,6 @@ class Train(object):
             except Exception as e:
                 # infeasible and unconnected case.
                 # you are unable to create a shortest path.
-                # self.logger.warning(e)
-                # self.logger.warning(f"unable to compute for {self.traNo}: {option}")
                 ssp_literal = []
                 cost = np.inf
                 if option == 'dual':
@@ -615,3 +635,61 @@ class Train(object):
         self.feasible_provider = 'seq'
         self.timetable = {}  # 以virtual station为key，存int值
         self.is_feasible = False
+
+
+import gurobipy as gb
+import coptpy as cp
+
+engine = gb
+quicksum = sum
+SANITY_CHECK = False
+
+
+# static method.
+def solve_quad_ssp(g, _source, _sink, mode='quad'):
+    """
+
+    Args:
+        _ig_s:
+        _sink:
+        _price:
+
+    Returns:
+
+    """
+    model = engine.Model("quadratic-proximal-ssp")
+    xe = model.addVars((e.tuple for e in g.es), lb=0.0, ub=1.0, name='e')
+
+    for v in g.vs:
+        if v.index == _source:
+            model.addConstr(quicksum(xe.select(v.index, "*")) == 1, name=f'sk_{v}')
+            continue
+        if v.index == _sink:
+            model.addConstr(quicksum(xe.select("*", v.index)) == 1, name=f'sk_{v}')
+            continue
+        model.addConstr(quicksum(xe.select("*", v.index)) - quicksum(xe.select(v.index, "*")) == 0, name=f'sk_{v}')
+
+    if mode == 'linear':
+        obj_expr = quicksum(xe[e.tuple] * (e['weight'] + e['multiplier']) for e in g.es)
+    elif mode == 'quad':
+        obj_expr = quicksum(
+            xe[e.tuple] * (e['weight'] + e['multiplier_linear'])
+            + xe[e.tuple] ** 2 * (e["multiplier_quad"])
+            for e in g.es)
+    else:
+        raise ValueError(f"no such mode implemented: {mode}")
+
+    model.setObjective(obj_expr)
+    model.setParam("LogToConsole", 0)
+    model.setParam("Threads", 1)
+    if SANITY_CHECK:
+        model.setParam("LogToConsole", 1)
+        spp_by_igraph = g.get_shortest_paths(_source, _sink, 'price', mode=ig.OUT, output='vpath')[0]
+        # do some checks.
+    # solve the model
+    model.optimize()
+    sol = {k: v for k, v in model.getAttr("X", xe).items() if v > 1e-6}
+    cost = model.getAttr("objval")
+    lag_cost = sum(e["multiplier"] * sol[e.tuple] for e in g.es if e.tuple in sol)
+
+    return sol, cost, lag_cost
