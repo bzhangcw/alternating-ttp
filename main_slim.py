@@ -1,20 +1,15 @@
 import datetime
-import logging
 import os
+import sys
 import time
-from collections import defaultdict
 from typing import *
 
-import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
-import util_output as uo
-from Train import *
-from jsp.main import main_jsp
 from gurobipy import GRB
-from itertools import product
 
-import sys
+import util_output as uo
+from train import *
+from jsp.main import main_jsp
 
 # logging.basicConfig(format="%(asctime)s: %(message)s", level=logging.INFO)
 logFormatter = logging.Formatter("%(asctime)s: %(message)s")
@@ -126,7 +121,7 @@ def read_train(path, size=10, time_span=1080):
     df = df.iloc[:size, :]
     train_series = df.apply(lambda row: parse_row_to_train(row, time_span), axis=1).dropna()
     global train_list
-    train_list = train_series.to_list()
+    train_list = [tr for tr in train_series.to_list() if tr.v_staList.__len__() > 2]  # sanity check
 
 
 def read_dwell_time(path):
@@ -204,7 +199,7 @@ def update_yvc_multiplier(multiplier):
                         multiplier[v_station, t - dt]["sp"] for dt in range(1, min(interval2, t + 1)))
 
 
-def update_subgradient_dict(node_occupy_dict, option="lagrange", z_vars=None):
+def update_subgradient_dict(params_sys, node_occupy_dict, option="lagrange", z_vars=None):
     subgradient_dict = {}
     primal_feas = {}
     for node, multi in multiplier.items():
@@ -218,7 +213,7 @@ def update_subgradient_dict(node_occupy_dict, option="lagrange", z_vars=None):
             _Ax = node_occupy_dict[node][cc[0]] \
                   + sum(
                 node_occupy_dict[node[0], node[1] + t][cc[1]]
-                for t in range(1, min(interval, time_span - node[1]))
+                for t in range(1, min(interval, params_sys.time_span - node[1]))
             )
             _z = z_vars[node][cc] = min(1, multiplier[node][cc] / params_subgrad.alpha + _Ax)
 
@@ -434,9 +429,9 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp", param
     return feasible_provider, path_cost_feasible, count, not_feasible_trains, buffer
 
 
-def init_multipliers(multiplier, v_station_list, option="lagrange", z_vars=None):
+def init_multipliers(params_sys, multiplier, v_station_list, option="lagrange", z_vars=None):
     for sta in v_station_list:  # 循环车站
-        for t in range(0, time_span):  # 循环时刻t
+        for t in range(0, params_sys.time_span):  # 循环时刻t
             if sta not in ["s_", "_t"]:
                 if sta.startswith("_"):  # arrival
                     multiplier[sta, t] = {"aa": 0, "ap": 0, "pa": 0, "pp": 0}
@@ -447,7 +442,7 @@ def init_multipliers(multiplier, v_station_list, option="lagrange", z_vars=None)
     if option == "pdhg_alm":
         assert z_vars is not None
         for sta in v_station_list:  # 循环车站
-            for t in range(0, time_span):  # 循环时刻t
+            for t in range(0, params_sys.time_span):  # 循环时刻t
                 if sta not in ["s_", "_t"]:
                     if sta.startswith("_"):  # arrival
                         z_vars[sta, t] = {"aa": 1, "ap": 1, "pa": 1, "pp": 1}
@@ -458,28 +453,7 @@ def init_multipliers(multiplier, v_station_list, option="lagrange", z_vars=None)
     return dict(multiplier)
 
 
-def process_updata():
-    global miles_up
-    miles_up = np.array(list(reversed(miles)))
-    miles_up = - miles_up + miles_up.max()
-
-
-if __name__ == '__main__':
-
-    params_sys = SysParams()
-    params_subgrad = SubgradParam()
-
-    params_sys.parse_environ()
-    params_subgrad.parse_environ()
-
-    station_size = params_sys.station_size
-    train_size = params_sys.train_size
-    time_span = params_sys.time_span
-    iter_max = params_sys.iter_max
-
-    dual = params_subgrad.dual_method
-    primal = params_subgrad.primal_heuristic_method
-
+def setup(params_sys, params_subgrad):
     # create result-folder.
     subdir_result = params_sys.subdir_result = datetime.datetime.now().strftime('%y%m%d-%H%M')
     fdir_result = params_sys.fdir_result = f"result/{subdir_result}"
@@ -489,20 +463,37 @@ if __name__ == '__main__':
     fileHandler.setFormatter(logFormatter)
     logger.addHandler(fileHandler)
 
-    logger.info(f"size: #train,#station,#timespan,#iter_max: {train_size, station_size, time_span, iter_max}")
-    read_station('raw_data/1-station.xlsx', station_size)
+    params_sys.log_problem_size(logger)
+
+    read_station('raw_data/1-station.xlsx', params_sys.station_size)
     read_station_stop_start_addtime('raw_data/2-station-extra.xlsx')
     read_section('raw_data/3-section-time.xlsx')
     read_dwell_time('raw_data/4-dwell-time.xlsx')
     if params_sys.up:
-        read_train('raw_data/7-lineplan-up.xlsx', train_size, time_span)
+        read_train('raw_data/7-lineplan-up.xlsx', params_sys.train_size, params_sys.time_span)
     else:
-        read_train('raw_data/6-lineplan-down.xlsx', train_size, time_span)
+        read_train('raw_data/6-lineplan-down.xlsx', params_sys.train_size, params_sys.time_span)
     read_intervals('raw_data/5-safe-intervals.xlsx')
     logger.info("reading finish")
 
     for tr in train_list:
-        tr.create_subgraph(sec_times_all[tr.speed], time_span)
+        tr.create_subgraph(sec_times_all[tr.speed], params_sys.time_span)
+    logger.info("graph initialization finish")
+
+    return params_sys, params_subgrad
+
+
+if __name__ == '__main__':
+    params_sys = SysParams()
+    params_subgrad = SubgradParam()
+
+    params_sys.parse_environ()
+    params_subgrad.parse_environ()
+
+    setup(params_sys, params_subgrad)
+
+    for tr in train_list:
+        tr.create_subgraph(sec_times_all[tr.speed], params_sys.time_span)
 
     alpha_list = [0.05, 0.2, 0.5, 1]
     print(alpha_list)
@@ -514,8 +505,8 @@ if __name__ == '__main__':
     # for alpha, gamma in product(alpha_list, gamma_list):
     for alpha in alpha_list:
         logger.info("Start")
-        alpha = alpha   # np.sqrt(tr.subgraph.ecount())
-        gamma = 2 # # np.sqrt(tr.subgraph.ecount())
+        alpha = alpha  # np.sqrt(tr.subgraph.ecount())
+        gamma = 2  # # np.sqrt(tr.subgraph.ecount())
         for tr in train_list:
             tr.reset()
         params_subgrad.reset()
@@ -526,7 +517,7 @@ if __name__ == '__main__':
         '''
         initialization
         '''
-        multiplier = init_multipliers(multiplier, v_station_list, params_subgrad.dual_method, z_vars)
+        multiplier = init_multipliers(params_sys, multiplier, v_station_list, params_subgrad.dual_method, z_vars)
 
         '''
         Lagrangian relaxation approach
@@ -543,7 +534,7 @@ if __name__ == '__main__':
         jsp_init = False
         path_cost_feasible = 1e6
         buffer = []
-        while params_subgrad.iter < iter_max:
+        while params_subgrad.iter < params_sys.iter_max:
             time_start_iter = time.time()
             # compile adjusted multiplier for each node
             #   from the original Lagrangian
@@ -564,7 +555,10 @@ if __name__ == '__main__':
                     option='dual_prox')
                 path_cost_LR += train.opt_cost_LR
                 update_node_occupy_dict(node_occupy_dict, train, "dual_prox", params_subgrad.beta)
-            subgradient_dict, primal_feas = update_subgradient_dict(node_occupy_dict, params_subgrad.dual_method, z_vars)
+            subgradient_dict, primal_feas = update_subgradient_dict(
+                params_sys, node_occupy_dict, params_subgrad.dual_method,
+                z_vars
+            )
             norm_1, norm_2, norm_inf = update_primal_infeasibility(primal_feas)
             params_subgrad.norms[0].append(norm_1)
             params_subgrad.norms[1].append(norm_2)

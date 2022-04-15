@@ -69,6 +69,11 @@ class SysParams(object):
         self.iter_max = int(os.environ.get('iter_max', 100))
         self.up = int(os.environ.get('up', 0))
 
+    def log_problem_size(self, logger):
+        logger.info(
+            f"size: #train,#station,#timespan,#iter_max: {self.train_size, self.station_size, self.time_span, self.iter_max}"
+        )
+
 
 # subgradient params
 class SubgradParam(object):
