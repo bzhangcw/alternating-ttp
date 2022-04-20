@@ -35,17 +35,23 @@ subproblem.modelsense = 'min';
 lk = ones(k, 1);
 xk = zeros(n, 1);
 
-dnom = normest(D);
+dnom = normest(D, 1e-4);
 % step-sizes
 % eta <= (2|D|^2 *tau)^{-1}
 eta = 0.1/dnom;
 tau = 0.9/2/dnom^2/eta;
 
 logiter = 1;
-maxiter = 1000;
+maxiter = 10;
 pars.OutputFlag = 0;
 % compute objective
-disp(" k     c'x    |Dx - d|   |x-xk|");
+headers = ["c'x", "phi", "|Dx - d|", "gap", "rho"];
+slots = ["%10s", "%10s", "%13s", "%8s", "%10s"];
+header = 'k';
+for j=1:5
+  header=strcat(header, sprintf(slots(j), headers(j)));
+end
+header = strcat(header, '\n');
 for i=1:maxiter
   
   % solve x
@@ -55,7 +61,6 @@ for i=1:maxiter
   subproblem.obj = obj;
   r = gurobi(subproblem, pars);
  
-  
   info = sprintf("%.3d %.3e %.3e %.3e\n", i, c'*xk, norm(D*xk - d), norm(xk - r.x));
   if mod(i, logiter) == 0
     fprintf(info)

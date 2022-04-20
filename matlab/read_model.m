@@ -16,7 +16,7 @@
 %  B is simply formed from a set of shortest path problem,
 
 %%
-function [m, model] = read_model (path)
+function [m, model] = read_model (path, boolmblk)
   m = gurobi_read(path);
   
   for l = 1: size(m.constrnames)
@@ -24,13 +24,18 @@ function [m, model] = read_model (path)
     break
     end
   end
-  l = l -1;
-  model.B = m.A(1:l, :);
-  model.b = m.rhs(1:l, :);
-  model.D = m.A(l+1:end, :);
-  model.d = m.rhs(l+1:end, :);
-  model.c = m.obj;
+  l = l-1;
+  model.A = m.A;
+  model.rhs = m.rhs;
+  model.obj = - m.obj;
   model.lb = m.lb;
   model.ub = m.ub;
+  model.vtype = m.vtype;
+  model.sense = m.sense;
+  % model.modelsense = m.modelsense;
+  model.l = l;
+  if boolmblk
+    % collect B as {B_k}, 
+  end
 end
 
