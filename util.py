@@ -7,7 +7,7 @@ from itertools import combinations
 
 from gurobipy import GRB
 
-from constr_verification import getConstrByPrefix
+from solver_utils import getConstrByPrefix
 
 ##############################
 # DEFAULTS
@@ -63,9 +63,9 @@ class SysParams(object):
 
     def parse_environ(self):
         import os
-        self.station_size = int(os.environ.get('station_size', 29))
-        self.train_size = int(os.environ.get('train_size', 292))
-        self.time_span = int(os.environ.get('time_span', 1080))
+        self.station_size = int(os.environ.get('station_size', 5))
+        self.train_size = int(os.environ.get('train_size', 10))
+        self.time_span = int(os.environ.get('time_span', 50))
         self.iter_max = int(os.environ.get('iter_max', 100))
         self.up = int(os.environ.get('up', 0))
 

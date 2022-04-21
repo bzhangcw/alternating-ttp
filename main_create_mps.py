@@ -3,7 +3,7 @@ from gurobipy import *
 
 import util_output as uo
 import main_slim as ms
-
+import solver_utils as su
 from train import *
 
 # get the prefix and affix of a multiway constr
@@ -80,22 +80,22 @@ def create_milp_model():
             out_edges = v.out_edges()
 
             if v.index == tr._ig_s:
-                model.addConstr(quicksum(xe[e['name']] for e in out_edges) <= 1, name=f'sk_{name}')
+                model.addConstr(quicksum(xe[e['name']] for e in out_edges) <= 1, name=f'sk_{(tr.traNo, *v["name"])}')
                 model.addConstr(
                     quicksum(xe[e['name']] for e in out_edges) == zjv[(tr.traNo, *v['name'])],
-                    name=f'zjv{name}'
+                    name=f'zjv{(tr.traNo, *v["name"])}'
                 )
                 continue
             if v.index == tr._ig_t:
-                model.addConstr(quicksum(xe[e['name']] for e in in_edges) <= 1, name=f'sk_{name}')
+                model.addConstr(quicksum(xe[e['name']] for e in in_edges) <= 1, name=f'sk_{(tr.traNo, *v["name"])}')
                 model.addConstr(
                     quicksum(xe[e['name']] for e in in_edges) == zjv[(tr.traNo, *v['name'])],
-                    name=f'zjv{name}'
+                    name=f'zjv{(tr.traNo, *v["name"])}'
                 )
                 continue
             model.addConstr(quicksum(xe[e['name']] for e in in_edges) - quicksum(xe[e['name']] for e in out_edges) == 0,
-                            name=f'sk_{name}')
-            model.addConstr(quicksum(xe[e['name']] for e in in_edges) == zjv[(tr.traNo, *v['name'])], name=f'zjv{name}')
+                            name=f'sk_{(tr.traNo, *v["name"])}')
+            model.addConstr(quicksum(xe[e['name']] for e in in_edges) == zjv[(tr.traNo, *v['name'])], name=f'zjv{(tr.traNo, *v["name"])}')
 
     train_class = defaultdict(list)
     for tr in ms.train_list:
@@ -137,6 +137,40 @@ def create_milp_model():
     return model, zjv
 
 
+def split_model(m: Model):
+    m.update()
+
+    # get constrs and vars for single train
+    train_index_dict = {tr.traNo: {"vars": None, "constrs": None} for tr in ms.train_list}
+    for traNo in train_index_dict:
+        train_constrs = su.getConstrByPrefix(m, [f"sk_({traNo}", f"zjv({traNo}"])
+        train_vars = su.getVarByPrefix(m, (f"zjv[{traNo},", f"e@{traNo}"))
+        train_index_dict[traNo]["constrs"] = [constr.index for constr in train_constrs]
+        train_index_dict[traNo]["vars"] = [var.index for var in train_vars]
+
+        # assert all vars and constrs are in model and not removed
+        assert all(ind >= 0 for ind in train_index_dict[traNo]["constrs"]) and all(ind >= 0 for ind in train_index_dict[traNo]["vars"])
+
+    # get coupling constraints
+    coupling_constr_index = [constr.index for constr in su.getConstrByPrefix(m, "multi")]
+
+    # sanity check for constrs
+    all_constrs = coupling_constr_index.copy()
+    for traNo in train_index_dict:
+        all_constrs.extend(train_index_dict[traNo]["constrs"])
+    assert len(all_constrs) == len(set(all_constrs)) == len(m.getConstrs())
+
+    # sanity check for vars
+    all_vars = []
+    for traNo in train_index_dict:
+        all_vars.extend(train_index_dict[traNo]["vars"])
+    assert len(all_vars) == len(set(all_vars)) == len(m.getVars())
+
+    # save coupling constraints
+    train_index_dict["coupling"] = coupling_constr_index
+    return train_index_dict
+
+
 if __name__ == '__main__':
     params_sys = SysParams()
     params_subgrad = SubgradParam()
@@ -147,6 +181,12 @@ if __name__ == '__main__':
     ms.setup(params_sys, params_subgrad)
 
     model, zjv = create_milp_model()
+
+    train_index_dict = split_model(model)
+
+    import pickle
+    with open("train_index_dict.pkl", "wb") as file:
+        pickle.dump(train_index_dict, file)
 
     model.write(f"test_{params_sys.train_size}_{params_sys.station_size}_{params_sys.time_span}.lp")
     optimize(model, zjv)
