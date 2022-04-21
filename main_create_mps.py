@@ -1,4 +1,5 @@
 import tqdm
+import pickle
 from gurobipy import *
 
 import util_output as uo
@@ -69,18 +70,22 @@ def create_milp_model():
         ((tr.traNo, *v['name']) for tr in ms.train_list for v in tr.subgraph.vs),
         lb=0, ub=1.0, name='zjv'
     )
+    # starting arcs
+    s_arcs = model.addVars(
+        (tr.traNo for tr in ms.train_list), vtype=GRB.BINARY, name='s_arcs'
+    )
 
     for tr in tqdm.tqdm(ms.train_list):
         # note xe are actually different for each train: j
         g = tr.subgraph
         xe = model.addVars((e['name'] for e in g.es), lb=0.0, ub=1.0, vtype=GRB.BINARY, name=f'e@{tr.traNo}')
         for v in g.vs:
-            name = v['name']
             in_edges = v.in_edges()
             out_edges = v.out_edges()
 
             if v.index == tr._ig_s:
-                model.addConstr(quicksum(xe[e['name']] for e in out_edges) <= 1, name=f'sk_{(tr.traNo, *v["name"])}')
+                model.addConstr(quicksum(xe[e['name']] for e in out_edges) == s_arcs[tr.traNo], name=f'start_arcs[{tr.traNo}]')
+                model.addConstr(s_arcs[tr.traNo] <= 1, name=f'sk_{(tr.traNo, *v["name"])}')
                 model.addConstr(
                     quicksum(xe[e['name']] for e in out_edges) == zjv[(tr.traNo, *v['name'])],
                     name=f'zjv{(tr.traNo, *v["name"])}'
@@ -128,9 +133,9 @@ def create_milp_model():
                 )
 
     # maximum number of trains, by add up z
-    obj_expr = quicksum(zjv.values())
+    obj_expr = -quicksum(s_arcs.values())
 
-    model.setObjective(obj_expr, sense=GRB.MAXIMIZE)
+    model.setObjective(obj_expr, sense=GRB.MINIMIZE)
     model.setParam("LogToConsole", 1)
     model.setParam("Threads", 1)
 
@@ -142,9 +147,9 @@ def split_model(m: Model):
 
     # get constrs and vars for single train
     train_index_dict = {tr.traNo: {"vars": None, "constrs": None} for tr in ms.train_list}
-    for traNo in train_index_dict:
-        train_constrs = su.getConstrByPrefix(m, [f"sk_({traNo}", f"zjv({traNo}"])
-        train_vars = su.getVarByPrefix(m, (f"zjv[{traNo},", f"e@{traNo}"))
+    for traNo in tqdm.tqdm(train_index_dict):
+        train_constrs = su.getConstrByPrefix(m, [f"sk_({traNo},", f"zjv({traNo},", f"start_arcs[{traNo}]"])
+        train_vars = su.getVarByPrefix(m, (f"zjv[{traNo},", f"e@{traNo}[", f"s_arcs[{traNo}]"))
         train_index_dict[traNo]["constrs"] = [constr.index for constr in train_constrs]
         train_index_dict[traNo]["vars"] = [var.index for var in train_vars]
 
@@ -184,9 +189,10 @@ if __name__ == '__main__':
 
     train_index_dict = split_model(model)
 
-    import pickle
-    with open("train_index_dict.pkl", "wb") as file:
+    with open(f"index_dict_{params_sys.train_size}_{params_sys.station_size}_{params_sys.time_span}.pkl", "wb") as file:
         pickle.dump(train_index_dict, file)
 
     model.write(f"test_{params_sys.train_size}_{params_sys.station_size}_{params_sys.time_span}.lp")
+    model.write(f"test_{params_sys.train_size}_{params_sys.station_size}_{params_sys.time_span}.rlp")
+    # model.write(f"test_{params_sys.train_size}_{params_sys.station_size}_{params_sys.time_span}.mps")
     optimize(model, zjv)
