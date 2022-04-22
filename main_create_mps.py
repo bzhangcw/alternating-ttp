@@ -192,7 +192,9 @@ if __name__ == '__main__':
     with open(f"index_dict_{params_sys.train_size}_{params_sys.station_size}_{params_sys.time_span}.pkl", "wb") as file:
         pickle.dump(train_index_dict, file)
 
+    print("start writing problem into file...")
     model.write(f"test_{params_sys.train_size}_{params_sys.station_size}_{params_sys.time_span}.lp")
-    model.write(f"test_{params_sys.train_size}_{params_sys.station_size}_{params_sys.time_span}.rlp")
-    # model.write(f"test_{params_sys.train_size}_{params_sys.station_size}_{params_sys.time_span}.mps")
+    # model.write(f"test_{params_sys.train_size}_{params_sys.station_size}_{params_sys.time_span}.rlp")
+    model.write(f"test_{params_sys.train_size}_{params_sys.station_size}_{params_sys.time_span}.mps")
+    print("finish writing problem into file...")
     optimize(model, zjv)

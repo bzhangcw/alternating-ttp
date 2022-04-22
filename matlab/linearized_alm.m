@@ -11,7 +11,7 @@
 %         x \in [l, u]
 % where, B = [D; A], q = [d; b]
 % phi(l) is called the dual function of l
-function [info] = linearized_alm(model, filename, params)
+function [alg, info] = linearized_alm(model, filename, params)
     [subproblems, coupling] = initialization(filename, model);
     
     % create algorithm struct
@@ -65,9 +65,18 @@ function [info] = linearized_alm(model, filename, params)
         pfeas = norm(psub);
         fprintf("%+.2d %+.2e %+.2e %+.3e %+.1e%% %+.3e\n", ...
         iter-1, zk, phik, pfeas, gapk, alg.rho);
+        info = struct;  % init empty struct
         if pfeas < 1e-6 && gapk < 1e-6
+            % collect information
+            info.z = zk;
+            info.phik = phik;
+            info.gap = gapk;
+            info.pfeas = norm(psub);
             break
         end
+
+        % update alg struct end of each iter
+        alg = update_alg(alg);
     end
 end
 
@@ -134,6 +143,10 @@ function [alg] = update_and_save_d(coupling, alg)
     alg.d(:, alg.iter) = update_d(coupling, xk, lk, alg.rho);
 end
 
+function [alg] = update_alg(alg)
+    alg.rho = alg.rho / alg.iter;
+end
+
 function [subproblems, coupling] = initialization(filename, model)
     % pe = pyenv("Version", "E:\APPLICATION\Anaconda3\envs\rail\python.exe");
     fid = py.open(filename,'rb');
@@ -147,13 +160,28 @@ function [subproblems, coupling] = initialization(filename, model)
         try 
             % convert to double
             key = double(key);
-    
+        catch ME
+            % get coupling constraints
+            coupling_constrs_index = int64(data{key}) + 1;
+            
+            % create coupling struct
+            coupling.A = model.A(coupling_constrs_index , :);
+            coupling.rhs = model.rhs(coupling_constrs_index , :);
+            coupling.constrs_index = coupling_constrs_index;
+            continue
+        end
             % get var and constr for each subproblem(train)
             vars_index = int64(data{key}{"vars"}) + 1;
             constrs_index = int64(data{key}{"constrs"}) + 1;
             
             % create subproblem struct
             subproblem.A = model.A(constrs_index, vars_index);
+            
+            % sanity check
+            %remain_constrs_index = setdiff(1:size(model.A,1), constrs_index);
+            %assert(all(model.A(remain_constrs_index, vars_index) == 0, 'all'))
+            remain_vars_index = setdiff(1:size(model.A,2), vars_index);
+            assert(sum(model.A(constrs_index, remain_vars_index), 'all') == 0)
             % no obj
             subproblem.sense = model.sense(constrs_index);
             subproblem.rhs = model.rhs(constrs_index);
@@ -173,26 +201,16 @@ function [subproblems, coupling] = initialization(filename, model)
             subproblem.vars_index = vars_index;
             subproblem.constrs_index = constrs_index;
             subproblem.No = key;
-            subproblem.result = [];
     
             % save subproblem
             subproblems(key) = subproblem;
-        catch ME
-            % get coupling constraints
-            coupling_constrs_index = int64(data{key}) + 1;
-            
-            % create coupling struct
-            coupling.A = model.A(coupling_constrs_index , :);
-            coupling.rhs = model.rhs(coupling_constrs_index , :);
-            coupling.constrs_index = coupling_constrs_index;
-        end
     end    
 end
 
 function [alg] = init_alg_struct(model, coupling, params)
     [m, n] = size(model.A);
-    rho = 1e+10;
-    tau = 1e+3;
+    rho = 1e+1;
+    tau = 1e+1;
 
     % define algorithm struct
     alg = struct;
