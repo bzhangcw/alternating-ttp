@@ -36,8 +36,10 @@ function [info] = linearized_alm(model, filename, params)
         alg.iter = iter;  % update iter
         % copy prev iter value to cur iter
         alg.x(:, alg.iter) = alg.x(:, alg.iter-1);
+        alg.d(:, alg.iter) = alg.d(:, alg.iter-1);
         
         for x_iter = 1:alg.x_outer_iter_max
+            % update x for all trains
             for subproblem = values(subproblems)
                 subproblem = subproblem{1};
                 [alg, r, ret_code] = update_and_save_x(subproblem, coupling, alg);
@@ -59,20 +61,20 @@ function [info] = linearized_alm(model, filename, params)
         xk = alg.x(:, alg.iter);
         zk = model.obj' * xk;
         gapk = 100*abs(zk-phik)/(abs(phik)+1e-6);
-        psub = max(coupling.A*xk - coupling.rhs, 0);
+        psub = max(coupling.A*xk  - coupling.rhs, 0);
         pfeas = norm(psub);
-        fprintf("%+.3d %+.2e %+.2e %+.3e %+.1e%% %+.3e\n", ...
-        iter, zk, phik, pfeas, gapk, alg.rho);
-        if norm(psub) < 1e-6
+        fprintf("%+.2d %+.2e %+.2e %+.3e %+.1e%% %+.3e\n", ...
+        iter-1, zk, phik, pfeas, gapk, alg.rho);
+        if pfeas < 1e-6 && gapk < 1e-6
             break
         end
     end
-
 end
 
 function [r] = update_x(subproblem, xk_j, dk_j, rho, tau, params) 
     % calculate new obj
     subproblem.obj = subproblem.c + rho * dk_j + 0.5 / tau * (ones(size(xk_j)) - 2*xk_j);
+    subproblem.objcon = - rho * dk_j' * xk_j + 0.5 / tau * (xk_j'*xk_j);
 
     % solve with gurobi
     r = gurobi(subproblem, params);
@@ -189,14 +191,14 @@ end
 
 function [alg] = init_alg_struct(model, coupling, params)
     [m, n] = size(model.A);
-    rho = 1.;
-    tau = 1.;
+    rho = 1e+10;
+    tau = 1e+3;
 
     % define algorithm struct
     alg = struct;
     alg.iter_max = 100;  
     alg.iter = 1; % current iteration index
-    alg.x_outer_iter_max = 10;  % update all js x_j multiple times before update multiplier
+    alg.x_outer_iter_max = 1;  % update all js x_j multiple times before update multiplier
     alg.x_inner_iter_max = 1;  % update single j x_j multiple times 
     alg.m = m;
     alg.n = n;
@@ -208,7 +210,7 @@ function [alg] = init_alg_struct(model, coupling, params)
     alg.params = params;
 
     % init
-    alg.lambda(:, 1) = 0;
-    alg.d(:, 1) = 0;  % index=1 is init value
-    alg.x(:, 1) = 0;  % index=1 is init value
+    alg.lambda(:, 1) = rand(size(alg.lambda, 1), 1);
+    alg.d(:, 1) = rand(size(alg.d, 1), 1);  % index=1 is init value
+    alg.x(:, 1) = rand(size(alg.x, 1), 1);  % index=1 is init value
 end
