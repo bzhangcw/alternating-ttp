@@ -37,8 +37,12 @@ function [alg, info] = linearized_alm(model, filename, params)
         % copy prev iter value to cur iter
         alg.x(:, alg.iter) = alg.x(:, alg.iter-1);
         alg.d(:, alg.iter) = alg.d(:, alg.iter-1);
+        alg.lambda(:, alg.iter) = alg.lambda(:, alg.iter-1);
         
         for x_iter = 1:alg.x_outer_iter_max
+            % update d (gradient of augmented term)
+            alg = update_and_save_d(coupling, alg);
+
             % update x for all trains
             for subproblem = values(subproblems)
                 subproblem = subproblem{1};
@@ -50,12 +54,18 @@ function [alg, info] = linearized_alm(model, filename, params)
             end
             
             % break if x_k is not changing
-            if norm(alg.x(:, alg.iter) - alg.x(:, alg.iter-1)) < 1e0
-                break
-            end
+%             norm_x_diff = norm(alg.x(:, alg.iter) - alg.x(:, alg.iter-1));
+%             if norm_x_diff < 1e-3
+%                 break
+%             end
         end
-        alg = update_and_save_lambda(coupling, alg);  % update lagrange multipliers
-        alg = update_and_save_d(coupling, alg);  % update gradient of augmented term
+        if alg.debug
+            norm_x_diff = norm(alg.x(:, alg.iter) - alg.x(:, alg.iter-1));
+            fprintf("norm(x_{k+1} - x_k)=%.2e\n", norm_x_diff)
+        end
+
+        % update lagrange multipliers
+        alg = update_and_save_lambda(coupling, alg);  
         
         % print status
         xk = alg.x(:, alg.iter);
@@ -106,9 +116,9 @@ function [alg, r, ret_code] = update_and_save_x(subproblem, coupling, alg)
         if strcmp(r.status, "OPTIMAL")
             xk_j = r.x;
             alg.x(vars_index, alg.iter) = xk_j;  % update xk_j
-            dk = update_d(coupling, alg.x(:, alg.iter), alg.lambda(:, alg.iter-1), alg.rho);
-            dk_j = dk(vars_index, 1);
-            alg.d(:, alg.iter) = dk;  % update dk
+%             dk = update_d(coupling, alg.x(:, alg.iter), alg.lambda(:, alg.iter-1), alg.rho);
+%             dk_j = dk(vars_index, 1);
+%             alg.d(:, alg.iter) = dk;  % update dk
             ret_code = 0;
         else
             disp("Error in optimization!")
@@ -129,6 +139,10 @@ end
 
 function [alg] = update_and_save_lambda(coupling, alg)
     alg.lambda(:, alg.iter) = update_lambda(coupling, alg);
+
+    if alg.debug
+        fprintf("norm(l_{k+1} - l_k)=%.2e\n", norm(alg.lambda(:, alg.iter)- alg.lambda(:, alg.iter-1)))
+    end
 end
 
 function [dk] = update_d(coupling, xk, lk, rho)
@@ -141,10 +155,15 @@ function [alg] = update_and_save_d(coupling, alg)
     xk = alg.x(:, alg.iter);
     lk = alg.lambda(:, alg.iter);
     alg.d(:, alg.iter) = update_d(coupling, xk, lk, alg.rho);
+
+    if alg.debug
+        fprintf("norm(d_{k+1} - d_k)=%.2e\n", norm(alg.d(:, alg.iter)- alg.d(:, alg.iter-1)))
+    end
 end
 
 function [alg] = update_alg(alg)
-    alg.rho = alg.rho / alg.iter;
+    epsilon = 0.01;
+    alg.rho = alg.rho / (1+epsilon);
 end
 
 function [subproblems, coupling] = initialization(filename, model)
@@ -209,12 +228,12 @@ end
 
 function [alg] = init_alg_struct(model, coupling, params)
     [m, n] = size(model.A);
-    rho = 1e+1;
+    rho = 1e-1;
     tau = 1e+1;
 
     % define algorithm struct
     alg = struct;
-    alg.iter_max = 100;  
+    alg.iter_max = 10;  
     alg.iter = 1; % current iteration index
     alg.x_outer_iter_max = 1;  % update all js x_j multiple times before update multiplier
     alg.x_inner_iter_max = 1;  % update single j x_j multiple times 
@@ -227,8 +246,11 @@ function [alg] = init_alg_struct(model, coupling, params)
     alg.tau = tau;
     alg.params = params;
 
+    % running mode
+    alg.debug = true;
+
     % init
-    alg.lambda(:, 1) = rand(size(alg.lambda, 1), 1);
+    alg.lambda(:, 1) = rand(size(alg.lambda, 1), 1) * alg.rho;
     alg.d(:, 1) = rand(size(alg.d, 1), 1);  % index=1 is init value
-    alg.x(:, 1) = rand(size(alg.x, 1), 1);  % index=1 is init value
+    alg.x(:, 1) = randi([0, 1], size(alg.x, 1), 1);  % index=1 is init value
 end
