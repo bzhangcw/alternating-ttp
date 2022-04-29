@@ -47,7 +47,7 @@ for i=1:pars.itermax
     fprintf(header);
   end
   % solve x
-  obj = c + D'*lk - rho*D'*d;
+  obj = full(c + D'*lk - rho*D'*d);
   subproblem.Q = Q*rho/2;
   subproblem.obj = obj;
   subproblem.objcon = - lk'*d + rho/2*(d'*d);
