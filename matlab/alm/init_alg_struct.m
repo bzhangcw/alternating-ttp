@@ -8,7 +8,7 @@ function [alg] = init_alg_struct(model, coupling, params)
 
     % define algorithm struct
     alg = struct;
-    alg.iter_max = 100;
+    alg.iter_max = 10;
     alg.iter = 1; % current iteration index
     alg.x_outer_iter_max = 10;  % update all js x_j multiple times before update multiplier
     alg.x_inner_iter_max = 1;  % update single j x_j multiple times 

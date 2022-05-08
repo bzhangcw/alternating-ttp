@@ -27,7 +27,7 @@ subproblem.ub = [model.ub; ones(dim, 1)];
 subproblem.vtype = [model.vtype; char(67*ones(dim, 1))];
 subproblem.sense = model.sense(~index,:);
 
-lk = rand(dim, 1);
+lk = zeros(dim, 1);
 xk = zeros(n, 1);
 Q = D'*D;
 % step-sizes

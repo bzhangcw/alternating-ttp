@@ -14,10 +14,10 @@
 function [alg, info] = linearized_alm(model, subproblems, coupling, alg)
     
 
-    headers = ["c'x", "phi", "|Dx - d|", "gap", "rho"];
-    slots = ["%10s", "%10s", "%13s", "%8s", "%10s"];
+    headers = ["c'x", "phi", "phi+", "|Dx - d|", "gap", "rho"];
+    slots = ["%10s", "%10s", "%10s", "%14s", "%8s", "%10s"];
     header = 'k';
-    for j=1:5
+    for j=1:6
       header=strcat(header, sprintf(slots(j), headers(j)));
     end
     header = strcat(header, '\n');
@@ -42,10 +42,11 @@ function [alg, info] = linearized_alm(model, subproblems, coupling, alg)
             alg = update_and_save_d(coupling, alg);
 
             % update x for all trains
+            linear_alm_obj = 0;
             for subproblem = values(subproblems)
                 subproblem = subproblem{1};
                 [alg, r, ret_code] = update_and_save_x(subproblem, coupling, alg);
-                
+                linear_alm_obj = linear_alm_obj + r.objval;
 %                 if ret_code == 0
 %                     phik = phik + r.objval;
 %                 end
@@ -56,10 +57,11 @@ function [alg, info] = linearized_alm(model, subproblems, coupling, alg)
 %             if norm_x_diff < 1e-3
 %                 break
 %             end
-            if alg.debug
-                alm_obj = cal_alm(model, coupling, alg);
-                fprintf("alm obj: %.2e\n", alm_obj)
-            end
+            
+           alm_obj = cal_alm(model, coupling, alg);
+           if alm_obj - linear_alm_obj < 1e-2
+             break;
+           end
         end
         if alg.debug
             norm_x_diff = norm(alg.x(:, alg.iter) - alg.x(:, alg.iter-1));
@@ -74,12 +76,13 @@ function [alg, info] = linearized_alm(model, subproblems, coupling, alg)
         % print status
         xk = alg.x(:, alg.iter);
         zk = model.obj' * xk;
+        phik_lin = linear_alm_obj;
         phik = cal_alm(model, coupling, alg);
         gapk = 100*abs(zk-phik)/(abs(phik)+1e-6);
         psub = max(coupling.A*xk  - coupling.rhs, 0);
         pfeas = norm(psub);
-        fprintf("%+.2d %+.2e %+.2e %+.3e %+.1e%% %+.3e\n", ...
-        iter-1, zk, phik, pfeas, gapk, alg.rho);
+        fprintf("%+.2d %+.2e %+.2e %+.2e, %+.3e %+.1e%% %+.3e\n", ...
+        iter-1, zk, phik_lin, alm_obj, pfeas, gapk, alg.rho);
         
         pfeasb = alg.pfeas;  % get pfeas before
         alg.pfeas = pfeas;  % update pfeas
