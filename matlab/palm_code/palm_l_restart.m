@@ -11,12 +11,16 @@ eps     = 1e-6;
 x       = ones(n,1);
 rho     = 1e-4;
 lambda  = rho*ones(m,1);
-restart = false;
 x_best  = -ones(n, 1);
+alpha  = 0.001;
+restart = false;
 
 tau    = 10;
-kmax   = 1000;
+kmax   = 50;
 imax   = 50;
+restart_itermax = 10;
+restart_mode = 1; % 0 for naive, 1 for random
+
 subproblem = values(subproblems);
 
 headers = ["c'x", "lobj", "|Ax - b|", "error", "rho","tau","iter"];
@@ -40,11 +44,11 @@ for k  = 1 : kmax
             gc  = dj + (0.5-x(Ij))/tau;
 
             if restart
-                Ij_select = x_old(Ij) > 0;
-                if sum(Ij_select) > 0  % train j is selected
-                    gc(Ij_select) = gc(Ij_select) + 1;
-                else
-                    gc = gc - 1;
+                if restart_mode == 0  # naive restart
+                    gc = naive_restart(x, Ij, gc);
+                elseif restart_mode == 1  # random restart
+                    p_lobj = @(x)(alm_obj(A, b, model.obj, x, lambda, alpha, rho));
+                    gc = random_path_restart(subproblem, j, x, restart_itermax, p_lobj);
                 end
             end
             
@@ -79,7 +83,6 @@ for k  = 1 : kmax
 
     Axb=A*x-b;
     pfeas  = norm(max(Axb,0));
-    alpha  = 0.001;
 %    alpha  = 0.0001/(sqrt(2)*k*pfeas);
     lambda = max(0,lambda+alpha*Axb);
     rho    = rho+alpha*pfeas^2/2;
@@ -103,5 +106,13 @@ for k  = 1 : kmax
     end
 end
 
+function [lobj] = alm_obj(A, b, c, x, lambda, alpha, rho)
+    Axb=A*x-b;
+    pfeas  = norm(max(Axb,0));
+    lambda = max(0,lambda+alpha*Axb);
+    rho    = rho+alpha*pfeas^2/2;
 
+    cx     = c'*x;
+    lobj   = cx+lambda'*Axb+rho*pfeas^2/2;
+end
 end

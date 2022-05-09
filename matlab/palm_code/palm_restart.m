@@ -11,14 +11,20 @@ eps    = 1e-6;
 x      = ones(n,1);
 rho    = 1e-4;
 lambda = rho*ones(m,1);
+x_best  = -ones(n, 1);
+restart = false;
+
 errorold  = 1e6;
 sigma  = 1.1;
 tau    = 100;
-kmax   = 100;
+
+kmax   = 50;
 imax   = 50;
+restart_itermax = 10;
+restart_mode = 1; % 0 for naive, 1 for random
+
 subproblem = values(subproblems);
-restart = false;
-x_best  = -ones(n, 1);
+
 
 headers = ["c'x", "lobj", "|Ax - b|", "error", "rho","tau","iter"];
 slots = ["%10s", "%10s", "%14s", "%8s", "%10s", "%9s","%5s"];
@@ -40,11 +46,11 @@ for k = 1 : kmax
             gc  = dj + (0.5-x(Ij))/tau;
 
             if restart
-                Ij_select = x_old(Ij) > 0;
-                if sum(Ij_select) > 0  % train j is selected
-                    gc(Ij_select) = gc(Ij_select) + 1;
-                else
-                    gc = gc - 1;
+                if restart_mode == 0
+                    gc = naive_restart(x, Ij, gc);
+                elseif restart_mode == 1
+                    p_lobj = @(x)(alm_obj(A, b, model.obj, x, lambda, rho));
+                    gc = random_path_restart(subproblem, j, x, restart_itermax, p_lobj);
                 end
             end
 
@@ -75,6 +81,8 @@ for k = 1 : kmax
             end
         end
     end
+    fprintf("\n")
+
     lambda = max(0,lambda + rho*(A*x-b));
     pfeas  = norm(max(A*x-b,0));
     cx     = (model.obj)'*x;
@@ -100,5 +108,9 @@ for k = 1 : kmax
     end
 end
 
-
+function [lobj] = alm_obj(A, b, c, x, lambda, rho)
+    lambda = max(0,lambda + rho*(A*x-b));
+    cx     = c'*x;
+    lobj   = cx+rho*norm(max(A*x-b+lambda/rho,0))^2/2;
+end
 end
