@@ -308,7 +308,7 @@ if __name__ == '__main__':
         mat_dict["b_" + str(traNo)] = b_k
         mat_dict["c_" + str(traNo)] = c_k
         print(f"traNo:{traNo}, A_k: {A_k.shape}, B_k: {B_k.shape}, b_k: {b_k.shape}, c_k: {c_k.shape}")
-    savemat(f"ttp_{params_sys.train_size}_{params_sys.station_size}_{params_sys.time_span}.mat", mat_dict)
+    savemat(f"ttp_{params_sys.train_size}_{params_sys.station_size}_{params_sys.time_span}.mat", mat_dict, do_compression=True)
 
     sanity_check = False
     if sanity_check:
