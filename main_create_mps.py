@@ -182,7 +182,7 @@ def create_decomposed_models():
     )
 
     modelDict = {}
-    for tr in ms.train_list:
+    for tr in tqdm.tqdm(ms.train_list):
         model = Model(f"quadratic-proximal-ssp-{tr.traNo}")
 
         # zjv[j, v]
@@ -221,7 +221,7 @@ def create_decomposed_models():
                             name=f'sk_{(tr.traNo, *v["name"])}')
             model.addConstr(quicksum(xe[e['name']] for e in in_edges) == zjv[(tr.traNo, *v['name'])], name=f'zjv{(tr.traNo, *v["name"])}')
 
-        for _tp, (bool_affix_ahead, bool_affix_after) in tqdm.tqdm(bool_affix_safe_int_map.items()):
+        for _tp, (bool_affix_ahead, bool_affix_after) in bool_affix_safe_int_map.items():
             ahead, after = _tp
             sub_safe_int = ms.safe_int[_tp]
             for (station, speed), interval in sub_safe_int.items():
