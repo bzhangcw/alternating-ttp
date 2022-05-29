@@ -85,7 +85,8 @@ def create_milp_model():
             out_edges = v.out_edges()
 
             if v.index == tr._ig_s:
-                model.addConstr(quicksum(xe[e['name']] for e in out_edges) == s_arcs[tr.traNo], name=f'start_arcs[{tr.traNo}]')
+                model.addConstr(quicksum(xe[e['name']] for e in out_edges) == s_arcs[tr.traNo],
+                                name=f'start_arcs[{tr.traNo}]')
                 model.addConstr(s_arcs[tr.traNo] <= 1, name=f'sk_{(tr.traNo, *v["name"])}')
                 model.addConstr(
                     quicksum(xe[e['name']] for e in out_edges) == zjv[(tr.traNo, *v['name'])],
@@ -101,7 +102,8 @@ def create_milp_model():
                 continue
             model.addConstr(quicksum(xe[e['name']] for e in in_edges) - quicksum(xe[e['name']] for e in out_edges) == 0,
                             name=f'sk_{(tr.traNo, *v["name"])}')
-            model.addConstr(quicksum(xe[e['name']] for e in in_edges) == zjv[(tr.traNo, *v['name'])], name=f'zjv{(tr.traNo, *v["name"])}')
+            model.addConstr(quicksum(xe[e['name']] for e in in_edges) == zjv[(tr.traNo, *v['name'])],
+                            name=f'zjv{(tr.traNo, *v["name"])}')
 
     train_class = defaultdict(list)
     for tr in ms.train_list:
@@ -146,29 +148,33 @@ def create_milp_model():
 def getA_b_c(m: Model):
     m.update()
 
-    b = np.zeros((m.NumConstrs, 1))
 
     # get coupling constraints
     non_coupling_constr_index = []
     coupling_constr_index = []
     for constr in m.getConstrs():
-        b[constr.index] = constr.rhs
         if constr.ConstrName.startswith("multi"):
             coupling_constr_index.append(constr.index)
         else:
             non_coupling_constr_index.append(constr.index)
 
     A = m.getA()
+    sense = np.array(m.getAttr('Sense')).reshape((m.NumConstrs, 1))
+    b = np.array(m.getAttr('RHS')).reshape((m.NumConstrs, 1))
+
+    # build
     B_k = A[non_coupling_constr_index, :]
     b_k = b[non_coupling_constr_index, :]
     A_k = A[coupling_constr_index, :]
-
+    sense_B_k = sense[non_coupling_constr_index,:]
+    sense_A_k = sense[coupling_constr_index,:]
+    b = b[coupling_constr_index, :]
     obj = m.getObjective()
     c_k = np.zeros((m.NumVars, 1))
     for i in range(obj.size()):
         c_k[obj.getVar(i).index] = obj.getCoeff(i)
 
-    return A_k, B_k, b_k, c_k
+    return A_k, B_k, b_k, c_k, b, sense_B_k, sense_A_k
 
 
 def create_decomposed_models():
@@ -203,7 +209,8 @@ def create_decomposed_models():
             out_edges = v.out_edges()
 
             if v.index == tr._ig_s:
-                model.addConstr(quicksum(xe[e['name']] for e in out_edges) == s_arcs[tr.traNo], name=f'start_arcs[{tr.traNo}]')
+                model.addConstr(quicksum(xe[e['name']] for e in out_edges) == s_arcs[tr.traNo],
+                                name=f'start_arcs[{tr.traNo}]')
                 model.addConstr(s_arcs[tr.traNo] <= 1, name=f'sk_{(tr.traNo, *v["name"])}')
                 model.addConstr(
                     quicksum(xe[e['name']] for e in out_edges) == zjv[(tr.traNo, *v['name'])],
@@ -219,7 +226,8 @@ def create_decomposed_models():
                 continue
             model.addConstr(quicksum(xe[e['name']] for e in in_edges) - quicksum(xe[e['name']] for e in out_edges) == 0,
                             name=f'sk_{(tr.traNo, *v["name"])}')
-            model.addConstr(quicksum(xe[e['name']] for e in in_edges) == zjv[(tr.traNo, *v['name'])], name=f'zjv{(tr.traNo, *v["name"])}')
+            model.addConstr(quicksum(xe[e['name']] for e in in_edges) == zjv[(tr.traNo, *v['name'])],
+                            name=f'zjv{(tr.traNo, *v["name"])}')
 
         for _tp, (bool_affix_ahead, bool_affix_after) in bool_affix_safe_int_map.items():
             ahead, after = _tp
@@ -247,8 +255,8 @@ def create_decomposed_models():
         obj_expr = -quicksum(s_arcs.values())
 
         model.setObjective(obj_expr, sense=GRB.MINIMIZE)
-        model.setParam("LogToConsole", 1)
-        model.setParam("Threads", 1)
+        # model.setParam("LogToConsole", 1)
+        # model.setParam("Threads", 1)
 
         modelDict[tr.traNo] = model
 
@@ -267,7 +275,8 @@ def split_model(m: Model):
         train_index_dict[traNo]["vars"] = [var.index for var in train_vars]
 
         # assert all vars and constrs are in model and not removed
-        assert all(ind >= 0 for ind in train_index_dict[traNo]["constrs"]) and all(ind >= 0 for ind in train_index_dict[traNo]["vars"])
+        assert all(ind >= 0 for ind in train_index_dict[traNo]["constrs"]) and all(
+            ind >= 0 for ind in train_index_dict[traNo]["vars"])
 
     # get coupling constraints
     coupling_constr_index = [constr.index for constr in su.getConstrByPrefix(m, "multi")]
@@ -301,14 +310,24 @@ if __name__ == '__main__':
     modelDict = create_decomposed_models()
 
     mat_dict = dict()
+    mat_dict['trains'] = []
+    mat_dict['b'] = 0
     for traNo in modelDict:
-        A_k, B_k, b_k, c_k = getA_b_c(modelDict[traNo])
-        mat_dict["A_" + str(traNo)] = A_k
-        mat_dict["B_" + str(traNo)] = B_k
-        mat_dict["b_" + str(traNo)] = b_k
-        mat_dict["c_" + str(traNo)] = c_k
+        A_k, B_k, b_k, c_k, b, sense_B_k, sense_A_k = getA_b_c(modelDict[traNo])
+        struct = {
+            "A": A_k,
+            "B": B_k,
+            "b": b_k,
+            "c": c_k,
+            "sense_A_k": sense_A_k,
+            "sense_B_k": sense_B_k
+        }
+        #
+        mat_dict['b'] = b
+        mat_dict['trains'].append(struct)
         print(f"traNo:{traNo}, A_k: {A_k.shape}, B_k: {B_k.shape}, b_k: {b_k.shape}, c_k: {c_k.shape}")
-    savemat(f"ttp_{params_sys.train_size}_{params_sys.station_size}_{params_sys.time_span}.mat", mat_dict)
+    savemat(f"ttp_{params_sys.train_size}_{params_sys.station_size}_{params_sys.time_span}.mat", mat_dict,
+            do_compression=True)
 
     sanity_check = False
     if sanity_check:
@@ -321,7 +340,8 @@ if __name__ == '__main__':
         assert len(full_model_coup_constr_names) == len(set(full_model_coup_constr_names))
         full_model_coup_constr_names = set(full_model_coup_constr_names)
         for traNo in modelDict:
-            sub_model_coup_constr_names = [constr.ConstrName for constr in su.getConstrByPrefix(modelDict[traNo], "multi")]
+            sub_model_coup_constr_names = [constr.ConstrName for constr in
+                                           su.getConstrByPrefix(modelDict[traNo], "multi")]
             assert len(sub_model_coup_constr_names) == len(set(sub_model_coup_constr_names))
             sub_model_coup_constr_names = set(sub_model_coup_constr_names)
 
