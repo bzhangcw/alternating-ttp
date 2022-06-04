@@ -21,7 +21,7 @@ sigma  = 2;
 % [~,y]  = eigs(A'*A);
 % tau    = 1/(max(diag(y))*rho);
 %
-Anorm = normest(A);
+Anorm = 20 % normest(A);
 tau    = 1/(Anorm^2*rho);
 kmax   = 1000;
 imax   = 10;
@@ -47,8 +47,8 @@ for k = 1 : kmax
       ATj = subproblem(j).coupling;
       Ij  = subproblem(j).vars_index;
       dj  = cj + rho*ATj'*max(A*x-b+lambda/rho,0);
-%       gc(Ij)  = dj + (0.5-x(Ij))/tau;
-      gc(Ij)  = dj;
+      gc(Ij)  = dj + (0.5-x(Ij))/tau;
+%       gc(Ij)  = dj;
       %         end
       %         for j = 1 : length(subproblem)
       gm.A   = subproblem(j).A;

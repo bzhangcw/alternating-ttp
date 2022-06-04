@@ -39,7 +39,7 @@ if __name__ == '__main__':
         mat_dict['b'] = b
         mat_dict['trains'].append(struct)
         print(f"traNo:{traNo}, A_k: {A_k.shape}, B_k: {B_k.shape}, b_k: {b_k.shape}, c_k: {c_k.shape}\n"
-              f"real binding size: {len(model_index)}")
+              f"real binding size: {len(model_index[traNo])}")
 
     # scipy.io.savemat(f"ttp_{params_sys.train_size}_{params_sys.station_size}_{params_sys.time_span}.mat", mat_dict,
     #         do_compression=True)

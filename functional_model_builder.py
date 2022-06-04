@@ -264,18 +264,21 @@ def create_decomposed_models():
 
         # note xe are actually different for each train: j
         g = tr.subgraph
-        xe = model.addVars((e['name'] for e in g.es), lb=0.0, ub=1.0, vtype=GRB.BINARY, name=f'e@{tr.traNo}')
+        # xe = model.addVars((e['name'] for e in g.es), lb=0.0, ub=1.0, vtype=GRB.BINARY, name=f'e@{tr.traNo}')
+        xe = model.addVars((e.index for e in g.es), lb=0.0, ub=1.0, vtype=GRB.BINARY, name=f'e@{tr.traNo}')
+        # use index
+        node_in_edges = g.get_inclist(ig.IN)
         for v in g.vs:
             in_edges = v.in_edges()
             out_edges = v.out_edges()
 
             if v.index == tr._ig_s:
-                model.addConstr(quicksum(xe[e['name']] for e in out_edges) <= 1, name=f'sk_{(tr.traNo, *v["name"])}')
+                model.addConstr(quicksum(xe[e.index] for e in out_edges) <= 1, name=f'sk_{(tr.traNo, *v["name"])}')
                 continue
             if v.index == tr._ig_t:
-                model.addConstr(quicksum(xe[e['name']] for e in in_edges) <= 1, name=f'sk_{(tr.traNo, *v["name"])}')
+                model.addConstr(quicksum(xe[e.index] for e in in_edges) <= 1, name=f'sk_{(tr.traNo, *v["name"])}')
                 continue
-            model.addConstr(quicksum(xe[e['name']] for e in in_edges) - quicksum(xe[e['name']] for e in out_edges) == 0,
+            model.addConstr(quicksum(xe[e.index] for e in in_edges) - quicksum(xe[e.index] for e in out_edges) == 0,
                             name=f'sk_{(tr.traNo, *v["name"])}')
 
         index_array = []
@@ -292,11 +295,16 @@ def create_decomposed_models():
                 for node in g.vs.select(station=v_station_ahead):
                     _, t = node['name']
 
-                    ahead_expr = quicksum(xe[e['name']] for e in node.in_edges())
+                    # ahead_expr = quicksum(xe[e['name']] for e in node.in_edges())
+                    ahead_expr = quicksum(xe.select(node_in_edges[node.index]))
+                    # after_expr = quicksum(
+                    #     xe[e['name']]
+                    #     for vv in g.vs.select(name_in=create_neighborhood(v_station_after, t, interval))
+                    #     for e in vv.in_edges()
+                    # )
                     after_expr = quicksum(
-                        xe[e['name']]
+                        quicksum(xe.select(node_in_edges[vv.index]))
                         for vv in g.vs.select(name_in=create_neighborhood(v_station_after, t, interval))
-                        for e in vv.in_edges()
                     )
                     model.addConstr(
                         LinExpr(ahead_expr + after_expr) <= 1,
@@ -305,7 +313,7 @@ def create_decomposed_models():
                     index_array.append(global_index[_tp, station, speed, v_station_ahead, t])
 
         # maximum number of trains, by add up z
-        obj_expr = -quicksum(xe[e['name']] for e in g.vs[tr._ig_s].out_edges())
+        obj_expr = -quicksum(xe[e.index] for e in g.vs[tr._ig_s].out_edges())
 
         model.setObjective(obj_expr, sense=GRB.MINIMIZE)
         # model.setParam("LogToConsole", 1)

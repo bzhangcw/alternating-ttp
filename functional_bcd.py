@@ -15,7 +15,7 @@ functional interface module for bcd
 """
 import functools
 from typing import Dict
-
+import time
 import numpy as np
 import scipy
 import scipy.sparse.linalg as ssl
@@ -117,11 +117,12 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
 
     """
     # data
+    start = time.time()
     blocks = mat_dict['trains']
     b = mat_dict['b']
     m, _ = b.shape
     A = scipy.sparse.hstack([blk['A'] for idx, blk in enumerate(blocks)])
-    Anorm = scipy.sparse.linalg.norm(A) / 10
+    Anorm = 20 # scipy.sparse.linalg.norm(A) / 10
 
     # alias
     rho = 1e-2
@@ -130,9 +131,9 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
     xk = [np.ones((blk['n'], 1)) for idx, blk in enumerate(blocks)]
     lbd = rho * np.ones(b.shape)
     # logger
-    headers = ["c'x", "lobj", "|Ax - b|", "error", "rho", "tau", "iter"]
-    slots = ["{:10s}", "{:10s}", "{:14s}", "{:8s}", "{:10s}", "{:9s}", "{:9s}"]
-    _log_header = "".join(slots).format(*headers)
+    headers = ["k", "t", "c'x", "lobj", "|Ax - b|", "error", "rho", "tau", "iter"]
+    slots = ["{:^3s}", "{:^7s}", "{:^9s}", "{:^9s}", "{:^10s}", "{:^10s}", "{:^9s}", "{:^9s}", "{:4s}"]
+    _log_header = " ".join(slots).format(*headers)
     print(_log_header)
     # - k: outer iteration num
     # - it: inner iteration num
@@ -176,16 +177,16 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
             # fixed-point eps
             if sum(_eps_fix_point.values()) < 1e-4:
                 break
-
+        _iter_time = time.time() - start
         _Ax = sum(_vAx.values())
-        _vpfeas = _nonnegative(_Ax - b + lbd / rho)
+        _vpfeas = _nonnegative(_Ax - b )
         eps_pfeas = np.linalg.norm(_vpfeas)
         cx = sum(_vcx.values())
 
-        lobj = cx + eps_pfeas ** 2 * rho / 2 - np.linalg.norm(lbd) ** 2 / 2 / rho
+        lobj = cx + (_nonnegative(_Ax - b + lbd / rho) ** 2).sum() * rho / 2 - np.linalg.norm(lbd) ** 2 / 2 / rho
         eps_fp = sum(_eps_fix_point.values())
-        _log_line = "{:d} {:+.2e} {:+.2e}, {:+.3e} {:+.3e} {:+.3e} {:.2f} {:d}".format(
-            k, cx, lobj, eps_pfeas, eps_fp, rho, tau, it
+        _log_line = "{:03d} {:.1e} {:+.2e} {:+.2e} {:+.3e} {:+.3e} {:+.3e} {:.2e} {:04d}".format(
+            k, _iter_time, cx, lobj, eps_pfeas, eps_fp, rho, tau, it + 1
         )
         print(_log_line)
         if eps_pfeas == 0 and eps_fp < 1e-4:

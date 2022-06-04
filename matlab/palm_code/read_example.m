@@ -4,7 +4,7 @@ rng('default');
 
 
 %% select one the following
-name = 'data/ttp_10_29_300';
+name = 'data/ttp_25_29_300';
 % name = 'data/ttp_50_29_300';
 % name = 'data/ttp_120_29_400';
 % name = 'data/ttp_200_29_720';
