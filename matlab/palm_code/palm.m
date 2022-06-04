@@ -13,13 +13,14 @@ rho    = 1e-4;
 lambda = rho*ones(m,1);
 
 sigma  = 2;
-tau    = 100;
+[~,y]  = eigs(A'*A);
+tau    = 1/(max(diag(y))*rho);
 kmax   = 1000;
 imax   = 10;
 % subproblem = values(subproblems);
 
 headers = ["c'x", "lobj", "|Ax - b|", "error", "rho","tau","iter"];
-slots = ["%10s", "%10s", "%14s", "%8s", "%10s", "%9s","%5s"];
+slots = ["%10s", "%10s", "%14s", "%8s", "%10s", "%9s","%9s"];
 header = 'k';
 for j=1:7
     header=strcat(header, sprintf(slots(j), headers(j)));

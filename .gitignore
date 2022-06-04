@@ -1,6 +1,7 @@
 # data folder
 raw_data/
 archive/
+*.mat
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

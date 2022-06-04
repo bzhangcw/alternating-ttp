@@ -247,6 +247,9 @@ class Train(object):
             edge_attrs={"weight": _weight, "name": _name},
             vertex_attrs={"name": self._ig_nodes}
         )
+        # add station and time for query
+        for vv in self.subgraph.vs:
+            vv['station'], vv['time'] = vv['name']
 
     def create_subgraph_ig(self, secTimes, TimeSpan):
         """
@@ -424,6 +427,43 @@ class Train(object):
         else:
             return ssp_literal, cost
 
+    def vectorize_update_arc_multiplier(self, c):
+        """
+        rebuild current price/multiplier to cal shortest path
+        """
+        self.opt_path_LR_dict = {node: None for node in self.opt_path_LR}
+        subg = self.subgraph
+        for e in subg.es:
+            # attr updates.
+            e['price'] = c[e.index]
+
+    def vectorize_shortest_path(self, option='dual'):
+        """
+         output edge-path-format of the shortest path
+         in vectorized form
+        """
+        i, j = self.source, self.sink
+        _g = self.subgraph if option.startswith('dual') else self.subgraph_primal
+        _price = 'price' if option.startswith('dual') else 'weight'
+        _sink = self._ig_t if option.startswith('dual') else self._ig_t_primal
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings('error')
+            try:
+                # ssa = _g.shortest_paths(self._ig_s, _sink, _price, mode=ig.OUT)
+                ssp = _g.get_shortest_paths(self._ig_s, _sink, _price, mode=ig.OUT, output='epath')[0]
+                x = np.zeros(len(_g.es))
+                x[ssp] = 1
+                return x
+            except Exception as e:
+                # infeasible and unconnected case.
+                # you are unable to create a shortest path.
+                ssp_literal = []
+                cost = np.inf
+                if option == 'dual':
+                    raise e
+
     def save_prev_lr_path(self):
         self.opt_path_LR_prev = self.opt_path_LR
         self.opt_path_LR_prev_dict = {node: None for node in self.opt_path_LR_prev}
@@ -500,4 +540,3 @@ def solve_quad_ssp(g, _source, _sink, mode='quad'):
     lag_cost = sum(e["multiplier"] * sol[e.tuple] for e in g.es if e.tuple in sol)
 
     return sol, cost, lag_cost
-

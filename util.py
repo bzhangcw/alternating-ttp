@@ -1,13 +1,16 @@
 """
-utility modules
+utility modules, include utility for subgradient method.
 """
+import datetime
 import logging
+import os
+import sys
 from collections import defaultdict
 from itertools import combinations
 
 from gurobipy import GRB
 
-from solver_utils import getConstrByPrefix
+from util_solver import getConstrByPrefix
 
 ##############################
 # DEFAULTS
@@ -34,8 +37,19 @@ safe_int = {}
 category = ["s", "a", "p"]
 safe_int_df = None
 
+##############################
+# LOGGER
+##############################
 _grb_logger = logging.getLogger("gurobipy.gurobipy")
 _grb_logger.setLevel(logging.ERROR)
+
+logFormatter = logging.Formatter("%(asctime)s: %(message)s")
+logger = logging.getLogger("railway")
+logger.setLevel(logging.INFO)
+
+# consoleHandler = logging.StreamHandler(sys.stdout)
+# consoleHandler.setFormatter(logFormatter)
+# logger.addHandler(consoleHandler)
 
 
 # global graph generation id.
@@ -61,6 +75,15 @@ class SysParams(object):
     iter_max = 0
     up = 0
 
+    def __init__(self):
+        subdir_result = self.subdir_result = datetime.datetime.now().strftime('%y%m%d-%H%M')
+        fdir_result = self.fdir_result = f"result/{subdir_result}"
+        os.makedirs(fdir_result, exist_ok=True)
+        fileHandler = logging.FileHandler("{0}/{1}.log".format(fdir_result, "out"))
+        fileHandler.setFormatter(logFormatter)
+        logger.addHandler(fileHandler)
+
+
     def parse_environ(self):
         import os
         self.station_size = int(os.environ.get('station_size', 29))
@@ -68,6 +91,7 @@ class SysParams(object):
         self.time_span = int(os.environ.get('time_span', 1080))
         self.iter_max = int(os.environ.get('iter_max', 100))
         self.up = int(os.environ.get('up', 0))
+        self.log_problem_size(logger)
 
     def log_problem_size(self, logger):
         logger.info(

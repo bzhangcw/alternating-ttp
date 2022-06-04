@@ -1,7 +1,16 @@
 clear;
 addpath('data');
 rng('default');
-filename = 'data/ttp_25_29_300.mat';
+
+
+%% select one the following
+name = 'data/ttp_10_29_300';
+% name = 'data/ttp_50_29_300';
+% name = 'data/ttp_120_29_400';
+% name = 'data/ttp_200_29_720';
+% name = 'data/ttp_292_29_1080';
+
+filename = sprintf('%s.mat', name);
 load(filename, 'trains', 'b');
 
 %%
@@ -11,6 +20,7 @@ check = 1;
 ntotal = length(trains);
 nn = 1;
 vars = 0;
+% for k = trains
 for k = trains
   % we do not need coupling like before
   [m, nvar] = size(k{1}.A);
@@ -20,12 +30,13 @@ for k = trains
   subproblems(nn).sense = k{1}.sense_B_k;
   subproblems(nn).c = k{1}.c;
   subproblems(nn).rhs = k{1}.b;
-%   subp.lb = 0;
-%   subp.ub = 1;
+  %   subp.lb = 0;
+  %   subp.ub = 1;
   subproblems(nn).vtype = 'B';
   subproblems(nn).lb = zeros(nvar,1);
   subproblems(nn).ub = ones(nvar,1);
   subproblems(nn).vars_index = vars+1: vars+nvar;
+  subproblems(nn).binding = k{1}.binding;
   %% for gurobi
   A{nn} = k{1}.A;
   B{nn} = k{1}.B;
@@ -48,6 +59,9 @@ model.sense = [vertcat(sense{:}); trains{1,1}.sense_A_k;];
 model.obj = [vertcat(c{:})];
 model.vtype = 'B';
 
+save(sprintf("%s.all.mat", name))
+% disp("saving model")
+% gurobi_write(model, sprintf('%s.mps.gz', name));
 
 
 

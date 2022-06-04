@@ -2,8 +2,8 @@
 A script to test if the timetable if valid.
 """
 
-import main_slim as ms
-from main_slim import *
+import main_subgrad as ms
+from main_subgrad import *
 from util_output import *
 
 import sys
@@ -36,7 +36,7 @@ if __name__ == '__main__':
     '''
     logger.info("reading finish")
     logger.info("step 1")
-    initialize_node_precedence(time_span)
+    # initialize_node_precedence(time_span)
     logger.info(f"maximum estimate of active nodes {gc.vc}")
 
     # for tr in train_list:
@@ -51,15 +51,14 @@ if __name__ == '__main__':
         tr.is_best_feasible = True
         tr.timetable = dict(_p)
 
-    params_subgrad = SubgradParam()
-    params_subgrad.dual_method = dual
-    params_subgrad.primal_heuristic_method = primal
-    params_subgrad.max_number = len(train_paths)
-
-    selective = None
-    plot_timetables(
-        ms.train_list, ms.miles, ms.station_list,
-        param_sys=params_sys,
-        param_subgrad=params_subgrad,
-        selective=selective
-    )
+    # params_subgrad = SubgradParam()
+    # params_subgrad.dual_method = dual
+    # params_subgrad.primal_heuristic_method = primal
+    # params_subgrad.max_number = len(train_paths)
+    #
+    # selective = None
+    #     ms.train_list, ms.miles, ms.station_list,
+    #     param_sys=params_sys,
+    #     param_subgrad=params_subgrad,
+    #     selective=selective
+    # )
