@@ -5,8 +5,6 @@ from functional_model_builder import *
 from functional_bcd import *
 import data as ms
 
-
-
 if __name__ == '__main__':
     # example usage.
     params_sys = SysParams()

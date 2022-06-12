@@ -25,6 +25,8 @@ from gurobipy import *
 import data as ms
 import util_output as uo
 import util_solver as su
+from restart_techniques import *
+from functools import partial
 from train import *
 
 
@@ -52,6 +54,9 @@ class BCDParams(object):
         self.multipliers = ([], [], [])
         self.itermax = 10000
         self.linmax = 10
+        self.restart = False
+        self.restart_mode = 0  # 0 for naive, 1 for perturbed
+        self.restart_itermax = 10  # 0 for naive, 1 for perturbed
 
     def parse_environ(self):
         import os
@@ -106,6 +111,15 @@ def _nonnegative(x):
     return max(x, 0)
 
 
+def alm_obj(idx, _x, lbd, b, rho, _vAx, _vcx, Ak, blk):
+    _vAx[idx] = Ak @ _x
+    _vcx[idx] = _cx = (blk['c'].T @ _x).trace()
+    _Ax = sum(_vAx.values())
+    _vpfeas = _nonnegative(_Ax - b)
+    cx = sum(_vcx.values())
+    return cx + (_nonnegative(_Ax - b + lbd / rho) ** 2).sum() * rho / 2 - np.linalg.norm(lbd) ** 2 / 2 / rho
+
+
 def optimize(bcdpar: BCDParams, mat_dict: Dict):
     """
 
@@ -154,9 +168,14 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
                 # update gradient
                 Ak = blk['A']
                 _Ax = sum(_vAx.values())
-                _c = blk['c'] \
-                     + rho * Ak.T @ _nonnegative(_Ax - b + lbd / rho) \
-                     + (0.5 - xk[idx]) / tau
+                _c = blk['c'] + rho * Ak.T @ _nonnegative(_Ax - b + lbd / rho) + (0.5 - xk[idx]) / tau
+                if bcdpar.restart:
+                    if bcdpar.restart_mode == 0:
+                        _c = naive_restart(xk[idx], _c)
+                    elif bcdpar.restart_mode == 1:
+                        _c = perturbed_restart(train, _c, itermax, lambda )
+                    else:
+                        raise ValueError("wrong restart mode!")
                 # save to price
                 train.vectorize_update_arc_multiplier(_c.flatten() - _c.min())
                 # compute shortest path
@@ -176,7 +195,12 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
 
             # fixed-point eps
             if sum(_eps_fix_point.values()) < 1e-4:
-                break
+                if it < bcdpar.linmax - 1:
+                    restart = True
+                    print("R")
+                else:
+                    break
+
         _iter_time = time.time() - start
         _Ax = sum(_vAx.values())
         _vpfeas = _nonnegative(_Ax - b )

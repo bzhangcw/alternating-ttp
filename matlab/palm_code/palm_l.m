@@ -13,7 +13,7 @@ rho    = 1e-4;
 lambda = rho*ones(m,1);
 
 tau    = 10;
-kmax   = 1000;
+kmax   = 50;
 imax   = 50;
 subproblem = values(subproblems);
 

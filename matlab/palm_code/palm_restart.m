@@ -16,7 +16,7 @@ restart = false;
 
 errorold  = 1e6;
 sigma  = 1.1;
-tau    = 100;
+tau    = 1;
 
 kmax   = 50;
 imax   = 50;
@@ -50,7 +50,7 @@ for k = 1 : kmax
                     gc = naive_restart(x, Ij, gc);
                 elseif restart_mode == 1
                     p_lobj = @(x)(alm_obj(A, b, model.obj, x, lambda, rho));
-                    gc = random_path_restart(subproblem, j, x, restart_itermax, p_lobj);
+                    gc = perturbed_restart(subproblem, j, x, restart_itermax, p_lobj);
                 end
             end
 
