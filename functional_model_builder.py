@@ -264,6 +264,10 @@ def create_decomposed_models():
 
         # note xe are actually different for each train: j
         g = tr.subgraph
+        # node name to index
+        node_to_index = {
+          n['name']: n.index  for n in g.vs
+        }
         # xe = model.addVars((e['name'] for e in g.es), lb=0.0, ub=1.0, vtype=GRB.BINARY, name=f'e@{tr.traNo}')
         xe = model.addVars((e.index for e in g.es), lb=0.0, ub=1.0, vtype=GRB.BINARY, name=f'e@{tr.traNo}')
         # use index
@@ -304,7 +308,7 @@ def create_decomposed_models():
                     # )
                     after_expr = quicksum(
                         quicksum(xe.select(node_in_edges[vv.index]))
-                        for vv in g.vs.select(name_in=create_neighborhood(v_station_after, t, interval))
+                        for vv in g.vs[[node_to_index[n] for n in create_neighborhood(v_station_after, t, interval) if n in node_to_index]]
                     )
                     model.addConstr(
                         LinExpr(ahead_expr + after_expr) <= 1,
