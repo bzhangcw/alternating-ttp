@@ -4,7 +4,7 @@ rng('default');
 
 
 %% select one the following
-name = 'data/ttp_25_29_300';
+name = 'data/ttp_30_29_720';
 % name = 'data/ttp_50_29_300';
 % name = 'data/ttp_120_29_400';
 % name = 'data/ttp_200_29_720';
@@ -24,10 +24,12 @@ vars = 0;
 for k = trains
   % we do not need coupling like before
   [m, nvar] = size(k{1}.A);
+  [m2, nvar] = size(k{1}.B);
   subproblems(nn).coupling = k{1}.A;
   subproblems(nn).A = k{1}.B;
   subproblems(nn).obj = k{1}.c;
-  subproblems(nn).sense = k{1}.sense_B_k;
+%   subproblems(nn).sense = k{1}.sense_B_k;
+  subproblems(nn).sense = char(ones(m2,1)*61);
   subproblems(nn).c = k{1}.c;
   subproblems(nn).rhs = k{1}.b;
   %   subp.lb = 0;
