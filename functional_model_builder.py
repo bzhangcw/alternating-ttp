@@ -2,8 +2,10 @@
 functional interface module for model builder via gurobi and so forth
 """
 import logging
+import numpy as np
 
 import scipy
+from scipy.sparse import csr_matrix
 import tqdm
 from gurobipy import *
 
@@ -212,9 +214,7 @@ def getA_b_c(m: Model, model_index, binding_size):
     # build
     B_k = A[non_coupling_constr_index, :]
     b_k = b[non_coupling_constr_index, :]
-    A_k = np.zeros((binding_size, n))
-    A_k[model_index, :] = A[coupling_constr_index, :].todense()
-    _logger.debug(A_k[12, :].nonzero())
+    A_k = _initialize_csr(model_index, coupling_constr_index, A, shape=(binding_size, n))
     b = np.ones((binding_size, 1))
     sense_B_k = sense[non_coupling_constr_index, :]
     sense_A_k = sense[coupling_constr_index, :]
@@ -223,7 +223,24 @@ def getA_b_c(m: Model, model_index, binding_size):
     for i in range(obj.size()):
         c_k[obj.getVar(i).index] = obj.getCoeff(i)
 
-    return scipy.sparse.csr_matrix(A_k), B_k, b_k, c_k, b, sense_B_k, ['<'] * binding_size
+    return A_k, B_k, b_k, c_k, b, sense_B_k, ['<'] * binding_size
+
+
+def _initialize_csr(model_index, coupling_constr_index, A, shape):
+    """
+    initialize csr matrix of the big coupling matrix A_k
+        total size of A_k in shape
+        A_k[model_index, :] = A[coupling_constr_index, :]
+    """
+    # @note: change this.
+    # A_k = np.zeros((binding_size, n))
+    # A_k[model_index, :] = A[coupling_constr_index, :].todense()
+    # _logger.debug(A_k[12, :].nonzero())
+
+    (binding_size, n) = shape
+    A_k = csr_matrix(shape, dtype=np.float64)
+
+    return A_k
 
 
 def create_decomposed_models():
@@ -266,7 +283,7 @@ def create_decomposed_models():
         g = tr.subgraph
         # node name to index
         node_to_index = {
-          n['name']: n.index  for n in g.vs
+            n['name']: n.index for n in g.vs
         }
         # xe = model.addVars((e['name'] for e in g.es), lb=0.0, ub=1.0, vtype=GRB.BINARY, name=f'e@{tr.traNo}')
         xe = model.addVars((e.index for e in g.es), lb=0.0, ub=1.0, vtype=GRB.BINARY, name=f'e@{tr.traNo}')
@@ -308,7 +325,8 @@ def create_decomposed_models():
                     # )
                     after_expr = quicksum(
                         quicksum(xe.select(node_in_edges[vv.index]))
-                        for vv in g.vs[[node_to_index[n] for n in create_neighborhood(v_station_after, t, interval) if n in node_to_index]]
+                        for vv in g.vs[[node_to_index[n] for n in create_neighborhood(v_station_after, t, interval) if
+                                        n in node_to_index]]
                     )
                     model.addConstr(
                         LinExpr(ahead_expr + after_expr) <= 1,
