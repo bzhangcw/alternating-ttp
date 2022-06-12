@@ -236,9 +236,10 @@ def _initialize_csr(model_index, coupling_constr_index, A, shape):
     # A_k = np.zeros((binding_size, n))
     # A_k[model_index, :] = A[coupling_constr_index, :].todense()
     # _logger.debug(A_k[12, :].nonzero())
-    A_k = csr_matrix(shape, dtype=np.float64)
-    A_k[model_index, :] = A[coupling_constr_index, :]
-    return A_k
+    A1 = A[coupling_constr_index, :].tocoo()
+    new_rows = np.array([model_index[idx] for idx in A1.row])
+    A_k = scipy.sparse.coo_matrix((A1.data, (new_rows, A1.col)), shape=shape)
+    return A_k.tocsr()
 
 
 def create_decomposed_models():

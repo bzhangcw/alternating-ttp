@@ -4,6 +4,7 @@ rng('default');
 
 
 %% select one the following
+% name = 'data/ttp_25_29_300';
 name = 'data/ttp_30_29_720';
 % name = 'data/ttp_50_29_300';
 % name = 'data/ttp_120_29_400';
@@ -61,7 +62,7 @@ model.sense = [vertcat(sense{:}); trains{1,1}.sense_A_k;];
 model.obj = [vertcat(c{:})];
 model.vtype = 'B';
 
-save(sprintf("%s.all.mat", name))
+% save(sprintf("%s.all.mat", name))
 % disp("saving model")
 % gurobi_write(model, sprintf('%s.mps.gz', name));
 
