@@ -236,10 +236,8 @@ def _initialize_csr(model_index, coupling_constr_index, A, shape):
     # A_k = np.zeros((binding_size, n))
     # A_k[model_index, :] = A[coupling_constr_index, :].todense()
     # _logger.debug(A_k[12, :].nonzero())
-
-    (binding_size, n) = shape
     A_k = csr_matrix(shape, dtype=np.float64)
-
+    A_k[model_index, :] = A[coupling_constr_index, :]
     return A_k
 
 
