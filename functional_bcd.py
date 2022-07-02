@@ -163,9 +163,9 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
                 _x = train.vectorize_shortest_path().reshape(_c.shape)
                 # accept or not
                 _v_sp = (_c.T @ _x).trace()
-                if _v_sp > 0:
-                    # do not select path
-                    _x = np.zeros(_c.shape)
+                # if _v_sp > 0:
+                #     do not select path
+                    # _x = np.zeros(_c.shape)
 
                 _eps_fix_point[idx] = np.linalg.norm(xk[idx] - _x)
 

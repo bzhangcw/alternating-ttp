@@ -293,10 +293,10 @@ def create_decomposed_models():
             out_edges = v.out_edges()
 
             if v.index == tr._ig_s:
-                model.addConstr(quicksum(xe[e.index] for e in out_edges) <= 1, name=f'sk_{(tr.traNo, *v["name"])}')
+                model.addConstr(quicksum(xe[e.index] for e in out_edges) == 1, name=f'sk_{(tr.traNo, *v["name"])}')
                 continue
             if v.index == tr._ig_t:
-                model.addConstr(quicksum(xe[e.index] for e in in_edges) <= 1, name=f'sk_{(tr.traNo, *v["name"])}')
+                model.addConstr(quicksum(xe[e.index] for e in in_edges) == 1, name=f'sk_{(tr.traNo, *v["name"])}')
                 continue
             model.addConstr(quicksum(xe[e.index] for e in in_edges) - quicksum(xe[e.index] for e in out_edges) == 0,
                             name=f'sk_{(tr.traNo, *v["name"])}')
@@ -334,7 +334,7 @@ def create_decomposed_models():
                     index_array.append(global_index[_tp, station, speed, v_station_ahead, t])
 
         # maximum number of trains, by add up z
-        obj_expr = -quicksum(xe[e.index] for e in g.vs[tr._ig_s].out_edges())
+        obj_expr = quicksum(e["name"][1][1] * xe[e.index] for e in g.es)
 
         model.setObjective(obj_expr, sense=GRB.MINIMIZE)
         # model.setParam("LogToConsole", 1)
