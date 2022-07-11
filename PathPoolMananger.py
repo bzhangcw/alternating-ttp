@@ -101,9 +101,9 @@ class PathPoolManager:
 
             v_sta = node1[0]
             sta = v_sta.replace("_", "")
-            rear_train = train1 if node1[1] >= node2[1] else train2
+            front_train, rear_train = (train2, train1) if node1[1] >= node2[1] else (train1, train2)
 
-            headway = self.safe_int[train1.v_sta_type[v_sta] + train2.v_sta_type[v_sta]][sta, rear_train.speed]
+            headway = self.safe_int[front_train.v_sta_type[v_sta] + rear_train.v_sta_type[v_sta]][sta, rear_train.speed]
             if abs(node1[1] - node2[1]) < headway:  # violation
                 return True
         return False
