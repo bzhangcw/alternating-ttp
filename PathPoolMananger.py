@@ -27,7 +27,7 @@ class PathPoolManager:
         path = tuple(path)
         path_id = len(self.path_ids)  # path_id as the order of adding the path
         if (train_id, path) in self.path_ids:
-            print(train_id, hash(path), "tuple already in the graph")
+            # print(train_id, hash(path), "tuple already in the graph")
             return
         self.path_ids[train_id, path] = path_id
         self.path_pool[train_id].append(path_id)

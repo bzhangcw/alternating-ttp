@@ -16,7 +16,6 @@ from jsp.util import get_train_table
 from jsp.dataLoader import write_train_table
 from gurobipy import GRB, Var
 from PathPoolMananger import PathPoolManager
-from tqdm import tqdm
 
 logging.basicConfig(format="%(asctime)s: %(message)s", level=logging.INFO)
 logger = logging.getLogger("railway")
@@ -400,13 +399,13 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp", param
     elif method == "path":
         path_pool_manager: PathPoolManager = kwargs.get("path_pool_manager", None)
         assert path_pool_manager is not None
-        for train in tqdm(train_list):
+        for train in train_list:
             if train.is_feasible:
                 path_pool_manager.add_path(train.traNo, train.feasible_path)
             path_pool_manager.add_path(train.traNo, train.opt_path_LR)
-        new_solution = path_pool_manager.maximal_independent_vertex_sets()
+        new_solution = path_pool_manager.largest_independent_vertex_sets()
         path_count = len(new_solution)
-        print("path pooling maximal cardinality:", path_count)
+        logger.info("path pooling maximal cardinality: " + str(path_count))
     else:
         raise TypeError(f"method has no wrong type: {method}")
 
