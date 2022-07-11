@@ -15,6 +15,8 @@ from jsp.main import main_jsp, station_name_list
 from jsp.util import get_train_table
 from jsp.dataLoader import write_train_table
 from gurobipy import GRB, Var
+from PathPoolMananger import PathPoolManager
+from tqdm import tqdm
 
 logging.basicConfig(format="%(asctime)s: %(message)s", level=logging.INFO)
 logger = logging.getLogger("railway")
@@ -395,6 +397,16 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp", param
             write_train_table(params_sys.fdir_result + f"/lr_{direction}.csv", train_table, station_name_list, direction)
     elif method == "seq":
         pass
+    elif method == "path":
+        path_pool_manager: PathPoolManager = kwargs.get("path_pool_manager", None)
+        assert path_pool_manager is not None
+        for train in tqdm(train_list):
+            if train.is_feasible:
+                path_pool_manager.add_path(train.traNo, train.feasible_path)
+            path_pool_manager.add_path(train.traNo, train.opt_path_LR)
+        new_solution = path_pool_manager.maximal_independent_vertex_sets()
+        path_count = len(new_solution)
+        print("path pooling maximal cardinality:", path_count)
     else:
         raise TypeError(f"method has no wrong type: {method}")
 
@@ -482,6 +494,7 @@ if __name__ == '__main__':
     jsp_init = False
     path_cost_feasible = 1e6
     buffer = []
+    path_pool_manager = PathPoolManager(train_list, safe_int)
     while params_subgrad.gap > minGap and params_subgrad.iter < iter_max:
         time_start_iter = time.time()
         # compile adjusted multiplier for each node
@@ -512,7 +525,8 @@ if __name__ == '__main__':
                 jsp_init,
                 buffer,
                 method=params_subgrad.primal_heuristic_method,
-                params_sys=params_sys
+                params_sys=params_sys,
+                path_pool_manager=path_pool_manager
             )
             params_subgrad.feasible_provider = feasible_provider
             jsp_init = True
