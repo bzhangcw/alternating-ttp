@@ -1,7 +1,7 @@
 from typing import List, Tuple, Union
 
-
-graph_tool = "networkx"
+# graph_tool = "networkx"
+graph_tool = "igraph"
 if graph_tool == "igraph":
     import igraph as ig
 elif graph_tool == "networkx":
@@ -59,9 +59,41 @@ class PathPoolManager:
 
     def largest_independent_vertex_sets(self):
         if graph_tool == "igraph":
-            return self.graph.largest_independent_vertex_sets()
+            # return self.graph.largest_independent_vertex_sets()
+            return self.maximal_ivs_with_starts()
         else:
             return nx.algorithms.approximation.maximum_independent_set(self.graph)
+
+    def maximal_ivs_with_starts(self):
+
+        # find best path for each train
+        vpool = []
+        for train_id, ppool in self.path_pool.items():
+            pp = sorted(ppool, key=lambda x: self.path_map[x][-2][-1])
+            vpool.append(pp[0])
+
+        def _mivs_for_v(v):
+            # sequential clique deletion algorithm.
+            # cf. https://en.wikipedia.org/wiki/Maximal_independent_set#Finding_a_single_maximal_independent_set
+            g = self.graph.copy()
+            iter = 0
+            mis = []
+            while g.vcount():
+                _v = g.vs.select(name=v)[0] if iter == 0 else g.vs[0]
+                mis.append(_v['name'])
+                g.delete_vertices([_v, *_v.neighbors()])
+                iter += 1
+            return tuple(sorted(mis)), iter
+
+        _maximum_value = 0
+        mis = None
+        for v in vpool:
+            _mis, _iter = _mivs_for_v(v)
+            _size = len(_mis)
+            if _size > _maximum_value:
+                mis = _mis
+                _maximum_value = _size
+        return mis
 
     def pairwise_path_conflict(self, train1, train2, path1, path2) -> bool:
         path1_start_station = path1[1][0]

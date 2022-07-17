@@ -465,21 +465,16 @@ if __name__ == '__main__':
     '''
     initialization
     '''
-    logger.info("reading finish")
-    logger.info("step 1")
+    logger.info("step 1: reading finish")
     multiplier = init_multipliers(multiplier, v_station_list)
     logger.info(f"maximum estimate of active nodes {gc.vc}")
 
     for tr in train_list:
         tr.create_subgraph(sec_times_all[tr.speed], time_span)
 
-    logger.info("step 2")
-    logger.info("step 3")
+    logger.info(f"step 2: graph building finish")
     logger.info(f"actual train size {len(train_list)}")
 
-    '''
-    Lagrangian relaxation approach
-    '''
 
     interval = 1
     interval_primal = 1
