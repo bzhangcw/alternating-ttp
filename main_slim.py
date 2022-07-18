@@ -403,6 +403,7 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp", param
             if train.is_feasible:
                 path_pool_manager.add_path(train.traNo, train.feasible_path)
             path_pool_manager.add_path(train.traNo, train.opt_path_LR)
+        logger.info(f"path pooling graph size: |V|: {path_pool_manager.graph.vcount()}, |E|: {path_pool_manager.graph.ecount()}")
         new_solution = path_pool_manager.largest_independent_vertex_sets()
         path_count = len(new_solution)
         logger.info("path pooling maximal cardinality: " + str(path_count))
@@ -451,7 +452,7 @@ if __name__ == '__main__':
     subdir_result = params_sys.subdir_result = datetime.datetime.now().strftime('%y%m%d-%H%M')
     fdir_result = params_sys.fdir_result = f"result/{subdir_result}"
     os.makedirs(fdir_result, exist_ok=True)
-    logger.info(f"size: #train,#station,#timespan,#iter_max: {train_size, station_size, time_span, iter_max}")
+    logger.info(f"size: {params_sys.__dict__}")
     read_station('raw_data/1-station.xlsx', station_size)
     read_station_stop_start_addtime('raw_data/2-station-extra.xlsx')
     read_section('raw_data/3-section-time.xlsx')
