@@ -489,7 +489,7 @@ if __name__ == '__main__':
     jsp_init = False
     path_cost_feasible = 1e6
     buffer = []
-    path_pool_manager = PathPoolManager(train_list, safe_int)
+    path_pool_manager = PathPoolManager(train_list, safe_int, params_sys.up)
     while params_subgrad.gap > minGap and params_subgrad.iter < iter_max:
         time_start_iter = time.time()
         # compile adjusted multiplier for each node

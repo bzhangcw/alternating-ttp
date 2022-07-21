@@ -1,4 +1,5 @@
 from typing import List, Tuple, Union
+from joblib import Parallel, delayed, parallel_backend
 
 # graph_tool = "networkx"
 graph_tool = "igraph"
@@ -11,8 +12,9 @@ else:
 
 
 class PathPoolManager:
-    def __init__(self, train_list: List, safe_int: dict):
+    def __init__(self, train_list: List, safe_int: dict, up: bool):
         self.safe_int = safe_int
+        self.up = up
         self.path_ids = dict()
         self.train_list = train_list
         self.train_ids_dict = {tr.traNo: tr for tr in self.train_list}
@@ -42,14 +44,18 @@ class PathPoolManager:
     def add_edge_with_conflict(self, train_id, path: Tuple):
         path_id = self.path_ids[train_id, path]
         train1 = self.train_ids_dict[train_id]
-        for path2_train_id, path2_pool in self.path_pool.items():
-            train2 = self.train_ids_dict[path2_train_id]
-            for path2_id in path2_pool:
+
+        conflict_path_pairs = []
+        for train2_id, tr2_path_pool in self.path_pool.items():
+            train2 = self.train_ids_dict[train2_id]
+            for path2_id in tr2_path_pool:
                 path2 = self.path_map[path2_id]
                 if (path_id != path2_id) and (
-                        train_id == path2_train_id or
+                        train_id == train2_id or
                         self.pairwise_path_conflict(train1, train2, path, path2)):  # in the same pool
-                    self.graph.add_edge(path_id, path2_id)
+                    conflict_path_pairs.append((path_id, path2_id))
+        for path1_id, path2_id in conflict_path_pairs:
+            self.graph.add_edge(path1_id, path2_id)
 
     def maximal_independent_vertex_sets(self):
         if graph_tool == "igraph":
@@ -100,20 +106,46 @@ class PathPoolManager:
         path2_start_station = path2[1][0]
         assert path1_start_station != "s_" and path2_start_station != "s_"
         common_start_station = path1_start_station \
-            if PathPoolManager.station_geq(path1_start_station, path2_start_station) \
+            if self.station_rear(path1_start_station, path2_start_station) \
             else path2_start_station
 
         path1_end_station = path1[-2][0]
         path2_end_station = path2[-2][0]
         assert path1_end_station != "_t" and path2_end_station != "_t"
         common_end_station = path1_end_station \
-            if PathPoolManager.station_geq(path2_end_station, path1_end_station) \
+            if self.station_rear(path2_end_station, path1_end_station) \
             else path2_end_station
 
-        new_path1 = [sp_node for sp_node in path1[1:-1] if PathPoolManager.station_geq(sp_node[0], common_start_station)
-                     and PathPoolManager.station_geq(common_end_station, sp_node[0])]
-        new_path2 = [sp_node for sp_node in path2[1:-1] if PathPoolManager.station_geq(sp_node[0], common_start_station)
-                     and PathPoolManager.station_geq(common_end_station, sp_node[0])]
+        if PathPoolManager.station_geq(common_start_station, common_end_station):
+            return False
+
+        # get common station list
+        path1_start_index = 0
+        for i in range(1, len(path1) - 1):
+            if PathPoolManager.station_geq(path1[i][0], common_start_station):
+                path1_start_index = i
+                break
+        path1_end_index = len(path1) - 1
+        for i in range(len(path1) - 2, 0, -1):
+            if PathPoolManager.station_geq(common_end_station, path1[i][0]):
+                path1_end_index = i
+                break
+        assert path1_start_index > 0 and path1_end_index < len(path1) - 1
+        new_path1 = list(path1[path1_start_index:path1_end_index + 1])
+
+        path2_start_index = 0
+        for i in range(1, len(path2) - 1):
+            if PathPoolManager.station_geq(path2[i][0], common_start_station):
+                path2_start_index = i
+                break
+        path2_end_index = len(path2) - 1
+        for i in range(len(path2) - 2, 0, -1):
+            if PathPoolManager.station_geq(common_end_station, path2[i][0]):
+                path2_end_index = i
+                break
+        assert path2_start_index > 0 and path2_end_index < len(path2) - 1
+        new_path2 = list(path2[path2_start_index:path2_end_index + 1])
+
         if len(new_path1) > 0:
             if new_path1[0][0].startswith("_"):
                 new_path1.pop(0)
@@ -140,8 +172,20 @@ class PathPoolManager:
                 return True
         return False
 
+    def station_rear(self, s1: str, s2: str):
+        if self.up:
+            return self.station_leq(s1, s2)
+        else:
+            return self.station_geq(s1, s2)
+
     @staticmethod
     def station_geq(s1: str, s2: str):
         s1_ = int(s1.replace("_", ""))
         s2_ = int(s2.replace("_", ""))
         return s1_ >= s2_
+
+    @staticmethod
+    def station_leq(s1: str, s2: str):
+        s1_ = int(s1.replace("_", ""))
+        s2_ = int(s2.replace("_", ""))
+        return s1_ <= s2_
