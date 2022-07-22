@@ -407,6 +407,21 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp", param
         new_solution = path_pool_manager.largest_independent_vertex_sets()
         path_count = len(new_solution)
         logger.info("path pooling maximal cardinality: " + str(path_count))
+        if path_count >= count:
+            feasible_provider = 'path'
+            feasible_train_paths = {}
+            for path_id in new_solution:
+                train_id, path = path_pool_manager.inverse_path_ids[path_id]
+                feasible_train_paths[train_id] = path
+
+            feasible_trains = set(feasible_train_paths.keys())
+            for train in train_list:
+                if train.traNo in feasible_trains:
+                    train.feasible_path = feasible_train_paths[train.traNo]
+                    train.is_feasible = True
+                else:
+                    train.is_feasible = False
+            count = path_count
     else:
         raise TypeError(f"method has no wrong type: {method}")
 
@@ -528,6 +543,9 @@ if __name__ == '__main__':
             logger.info(f"maximum cardinality of feasible paths: {count}")
             logger.info(f"infeasible trains: {not_feasible_trains}")
             logger.info("primal stage finished")
+            direction = "up" if params_sys.up == 1 else "down"
+            train_table = get_train_table_from_feas_path(train_list)
+            write_train_table_feas_path(params_sys.fdir_result + f"/lr_{'up' if params_sys.up else 'down'}.csv", train_table, station_name_list, direction)
 
             # update best primal solution
             if count > max_number:

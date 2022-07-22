@@ -4,6 +4,8 @@ utility modules
 import logging
 from collections import defaultdict
 from itertools import combinations
+import pandas as pd
+from jsp.util import num2time
 
 from gurobipy import GRB
 
@@ -265,3 +267,56 @@ def LR_path_overtaking(train_1, train_2, method="dual"):
                 return True
 
     return False
+
+
+def get_train_table_from_feas_path(train_list):
+    train_table = {}
+    for train in train_list:
+        train_id = train.traNo
+        train_table[train_id] = {}
+        for i, (v_station, t) in enumerate(train.feasible_path[1:-1]):
+            station = v_station.replace("_", "")
+            run_type = 'dep' if v_station.endswith("_") else 'arr'
+
+            train_table[train_id].setdefault(station, {})
+            if i == 0 or i == len(train.feasible_path) - 3:
+                train_table[train_id][station]['dep'] = train_table[train_id][station]['arr'] = round(t, 2)
+            else:
+                train_table[train_id][station][run_type] = round(t, 2)
+
+        for station, times in train_table[train_id].items():
+            assert len(times) == 2
+    return train_table
+
+
+def write_train_table_feas_path(path, train_table, station_name_list, direction='up', sort=True, encoding='utf-8'):
+    """
+    列: 车次ID, 车次, 站序, 站名, 到点, 发点
+    """
+    df = pd.DataFrame(columns=['车次ID', '车次', '站序', '站名', '到点', '发点'])
+
+    train_list = list(train_table.keys())
+    if sort:
+        train_list.sort(key=lambda tr: int(tr), reverse=False)
+
+    for train_id in train_list:
+        if direction == 'up':
+            trn = 2 * train_id
+        elif direction == 'down':
+            trn = 2 * train_id - 1
+        else:
+            raise ValueError("The direction of train should be up or down.")
+        k = 0
+        train_route = train_table[train_id]
+        rows = []
+        for station, times in train_route.items():
+            row = {'车次ID': train_id,
+                   '车次': trn,
+                   '站序': k,
+                   '站名': station_name_list[int(station) - 1],
+                   '到点': num2time(times['arr']),
+                   '发点': num2time(times['dep'])}
+            rows.append(pd.Series(row))
+            k = k + 1
+        df = pd.concat(rows, ignore_index=True)
+    df.to_csv(path, encoding=encoding, index=False)

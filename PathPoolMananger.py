@@ -15,11 +15,11 @@ class PathPoolManager:
     def __init__(self, train_list: List, safe_int: dict, up: bool):
         self.safe_int = safe_int
         self.up = up
-        self.path_ids = dict()
+        self.to_path_ids = dict()
         self.train_list = train_list
         self.train_ids_dict = {tr.traNo: tr for tr in self.train_list}
         self.path_pool = {train_id: [] for train_id in self.train_ids_dict}
-        self.path_map = {}
+        self.inverse_path_ids = {}
         if graph_tool == "igraph":
             self.graph = ig.Graph(directed=False)
         else:
@@ -27,13 +27,13 @@ class PathPoolManager:
 
     def add_path(self, train_id: int, path: Union[List, Tuple]):
         path = tuple(path)
-        path_id = len(self.path_ids)  # path_id as the order of adding the path
-        if (train_id, path) in self.path_ids:
+        path_id = len(self.to_path_ids)  # path_id as the order of adding the path
+        if (train_id, path) in self.to_path_ids:
             # print(train_id, hash(path), "tuple already in the graph")
             return
-        self.path_ids[train_id, path] = path_id
+        self.to_path_ids[train_id, path] = path_id
         self.path_pool[train_id].append(path_id)
-        self.path_map[path_id] = path
+        self.inverse_path_ids[path_id] = train_id, path
 
         if graph_tool == "igraph":
             self.graph.add_vertex(path_id)
@@ -42,14 +42,14 @@ class PathPoolManager:
         self.add_edge_with_conflict(train_id, path)
 
     def add_edge_with_conflict(self, train_id, path: Tuple):
-        path_id = self.path_ids[train_id, path]
+        path_id = self.to_path_ids[train_id, path]
         train1 = self.train_ids_dict[train_id]
 
         conflict_path_pairs = []
         for train2_id, tr2_path_pool in self.path_pool.items():
             train2 = self.train_ids_dict[train2_id]
             for path2_id in tr2_path_pool:
-                path2 = self.path_map[path2_id]
+                _, path2 = self.inverse_path_ids[path2_id]
                 if (path_id != path2_id) and (
                         train_id == train2_id or
                         self.pairwise_path_conflict(train1, train2, path, path2)):  # in the same pool
@@ -75,7 +75,7 @@ class PathPoolManager:
         # find best path for each train
         vpool = []
         for train_id, ppool in self.path_pool.items():
-            pp = sorted(ppool, key=lambda x: self.path_map[x][-2][-1])
+            pp = sorted(ppool, key=lambda x: self.inverse_path_ids[x][1][-2][-1])
             vpool.append(pp[0])
 
         def _mivs_for_v(v):
@@ -116,18 +116,18 @@ class PathPoolManager:
             if self.station_rear(path2_end_station, path1_end_station) \
             else path2_end_station
 
-        if PathPoolManager.station_geq(common_start_station, common_end_station):
+        if self.station_rear(common_start_station, common_end_station):
             return False
 
         # get common station list
         path1_start_index = 0
         for i in range(1, len(path1) - 1):
-            if PathPoolManager.station_geq(path1[i][0], common_start_station):
+            if self.station_rear(path1[i][0], common_start_station):
                 path1_start_index = i
                 break
         path1_end_index = len(path1) - 1
         for i in range(len(path1) - 2, 0, -1):
-            if PathPoolManager.station_geq(common_end_station, path1[i][0]):
+            if self.station_rear(common_end_station, path1[i][0]):
                 path1_end_index = i
                 break
         assert path1_start_index > 0 and path1_end_index < len(path1) - 1
@@ -135,12 +135,12 @@ class PathPoolManager:
 
         path2_start_index = 0
         for i in range(1, len(path2) - 1):
-            if PathPoolManager.station_geq(path2[i][0], common_start_station):
+            if self.station_rear(path2[i][0], common_start_station):
                 path2_start_index = i
                 break
         path2_end_index = len(path2) - 1
         for i in range(len(path2) - 2, 0, -1):
-            if PathPoolManager.station_geq(common_end_station, path2[i][0]):
+            if self.station_rear(common_end_station, path2[i][0]):
                 path2_end_index = i
                 break
         assert path2_start_index > 0 and path2_end_index < len(path2) - 1
