@@ -289,7 +289,7 @@ def get_train_table_from_feas_path(train_list):
     return train_table
 
 
-def write_train_table_feas_path(path, train_table, station_name_list, direction='up', sort=True, encoding='utf-8'):
+def write_train_table_feas_path(path, train_table, station_name_list, direction='up', sort=True, encoding='utf-8-sig'):
     """
     列: 车次ID, 车次, 站序, 站名, 到点, 发点
     """
@@ -299,6 +299,7 @@ def write_train_table_feas_path(path, train_table, station_name_list, direction=
     if sort:
         train_list.sort(key=lambda tr: int(tr), reverse=False)
 
+    rows = []
     for train_id in train_list:
         if direction == 'up':
             trn = 2 * train_id
@@ -308,7 +309,6 @@ def write_train_table_feas_path(path, train_table, station_name_list, direction=
             raise ValueError("The direction of train should be up or down.")
         k = 0
         train_route = train_table[train_id]
-        rows = []
         for station, times in train_route.items():
             row = {'车次ID': train_id,
                    '车次': trn,
@@ -318,5 +318,5 @@ def write_train_table_feas_path(path, train_table, station_name_list, direction=
                    '发点': num2time(times['dep'])}
             rows.append(pd.Series(row))
             k = k + 1
-        df = pd.concat(rows, ignore_index=True)
+    df = pd.DataFrame(rows)
     df.to_csv(path, encoding=encoding, index=False)
