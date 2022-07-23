@@ -1,5 +1,4 @@
 from typing import List, Tuple, Union
-from joblib import Parallel, delayed, parallel_backend
 
 # graph_tool = "networkx"
 graph_tool = "igraph"
@@ -12,7 +11,7 @@ else:
 
 
 class PathPoolManager:
-    def __init__(self, train_list: List, safe_int: dict, up: bool):
+    def __init__(self, train_list: List, safe_int: dict, up: bool, miv_mode: int = 1):
         self.safe_int = safe_int
         self.up = up
         self.to_path_ids = dict()
@@ -20,6 +19,7 @@ class PathPoolManager:
         self.train_ids_dict = {tr.traNo: tr for tr in self.train_list}
         self.path_pool = {train_id: [] for train_id in self.train_ids_dict}
         self.inverse_path_ids = {}
+        self.miv_mode = miv_mode
         if graph_tool == "igraph":
             self.graph = ig.Graph(directed=False)
         else:
@@ -71,34 +71,99 @@ class PathPoolManager:
             return nx.algorithms.approximation.maximum_independent_set(self.graph)
 
     def maximal_ivs_with_starts(self):
+        if self.miv_mode == 0:
+            # find best path for each train
+            vpool = []
+            for train_id, ppool in self.path_pool.items():
+                pp = sorted(ppool, key=lambda x: self.inverse_path_ids[x][1][-2][-1])
+                vpool.append(pp[0])
 
-        # find best path for each train
-        vpool = []
-        for train_id, ppool in self.path_pool.items():
-            pp = sorted(ppool, key=lambda x: self.inverse_path_ids[x][1][-2][-1])
-            vpool.append(pp[0])
-
-        def _mivs_for_v(v):
-            # sequential clique deletion algorithm.
-            # cf. https://en.wikipedia.org/wiki/Maximal_independent_set#Finding_a_single_maximal_independent_set
-            g = self.graph.copy()
-            iter = 0
-            mis = []
-            while g.vcount():
-                _v = g.vs.select(name=v)[0] if iter == 0 else g.vs[0]
-                mis.append(_v['name'])
+            _maximum_value = 0
+            mis = None
+            for v in vpool:
+                g = self.graph.copy()
+                _v = g.vs.select(name=v)[0]
+                _mis = [_v['name']]
                 g.delete_vertices([_v, *_v.neighbors()])
-                iter += 1
-            return tuple(sorted(mis)), iter
+                _mis.extend(self._mivs(g))
+                _size = len(_mis)
+                if _size > _maximum_value:
+                    mis = _mis
+                    _maximum_value = _size
+            assert len(mis) <= len(self.train_list)
+            return tuple(mis)
+        else:
+            # find best path without each train
+            mis = []
+            _maximum_value = 0
+            mis_best_dict = {}
+            for train in self.train_list:
+                if train.is_feasible:
+                    path_id = self.to_path_ids[train.traNo, tuple(train.feasible_path)]
+                    mis_best_dict[train.traNo] = path_id
+                    _maximum_value += 1
+                    mis.append(path_id)
+            if _maximum_value < len(self.train_list):
+                g = self.graph.copy()
+                v_list = list(mis_best_dict.values())
+                _mis = self._mivs_for_v_list(g, v_list)
+                _size = len(_mis)
+                if _size > _maximum_value:
+                    mis = _mis
+                    _maximum_value = _size
+                    if _maximum_value == len(self.train_list):
+                        return tuple(mis)
 
-        _maximum_value = 0
-        mis = None
-        for v in vpool:
-            _mis, _iter = _mivs_for_v(v)
-            _size = len(_mis)
-            if _size > _maximum_value:
-                mis = _mis
-                _maximum_value = _size
+                for train in self.train_list:
+                    if train.is_feasible:
+                        g = self.graph.copy()
+                        path_id = mis_best_dict.pop(train.traNo)
+                        v_list = list(mis_best_dict.values())
+                        mis_best_dict[train.traNo] = path_id
+                        _mis = self._mivs_for_v_list(g, v_list)
+                        _size = len(_mis)
+                        if _size > _maximum_value:
+                            mis = _mis
+                            _maximum_value = _size
+                            if _maximum_value == len(self.train_list):
+                                break
+            assert len(mis) <= len(self.train_list)
+            return tuple(mis)
+
+    @staticmethod
+    def _mivs(g):
+        # sequential clique deletion algorithm.
+        # cf. https://en.wikipedia.org/wiki/Maximal_independent_set#Finding_a_single_maximal_independent_set
+        mis = []
+        while g.vcount():
+            _v = g.vs[0]
+            mis.append(_v['name'])
+            g.delete_vertices([_v, *_v.neighbors()])
+        return sorted(mis)
+
+    @staticmethod
+    def _mivs_for_v_list(g, v_list):
+        # sequential clique deletion algorithm.
+        # cf. https://en.wikipedia.org/wiki/Maximal_independent_set#Finding_a_single_maximal_independent_set
+        mis = []
+        while g.vcount():
+            if len(v_list) > 0:
+                v = v_list.pop(0)
+                _v = g.vs.select(name=v)[0]
+            else:
+                _v = g.vs[0]
+            mis.append(_v['name'])
+            g.delete_vertices([_v, *_v.neighbors()])
+        return tuple(sorted(mis))
+
+    @staticmethod
+    def _mivs_without_vs(g, v_list):
+        g.delete_vertices(v_list)
+        mis = []
+        while g.vcount():
+            _v = g.vs[0]
+            mis.append(_v['name'])
+            g.delete_vertices([_v, *_v.neighbors()])
         return mis
 
     def pairwise_path_conflict(self, train1, train2, path1, path2) -> bool:
