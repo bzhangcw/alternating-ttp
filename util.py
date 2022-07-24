@@ -61,6 +61,7 @@ class SysParams(object):
     time_span = 0
     iter_max = 0
     up = 0
+    fix_preferred_time = True
 
     def parse_environ(self):
         import os
@@ -69,6 +70,7 @@ class SysParams(object):
         self.time_span = int(os.environ.get('time_span', 1080))
         self.iter_max = int(os.environ.get('iter_max', 100))
         self.up = int(os.environ.get('up', 0))
+        self.fix_preferred_time = int(os.environ.get('fix_preferred_time', True))
 
 
 # subgradient params

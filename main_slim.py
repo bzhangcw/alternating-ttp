@@ -16,6 +16,7 @@ from jsp.util import get_train_table
 from jsp.dataLoader import write_train_table
 from gurobipy import GRB, Var
 from PathPoolMananger import PathPoolManager
+from joblib import Parallel, delayed, parallel_backend
 
 logging.basicConfig(format="%(asctime)s: %(message)s", level=logging.INFO)
 logger = logging.getLogger("railway")
@@ -99,7 +100,7 @@ def read_section(path):
 
 def parse_row_to_train(row, time_span=1080):
     tr = Train(row['车次ID'], 0, time_span, backend=1)
-    tr.preferred_time = row['偏好始发时间']
+    tr.preferred_time = row['偏好始发时间'] - 360  # minus 6h, translate to zero time
     tr.up = row['上下行']
     tr.standard = row['标杆车']
     tr.speed = row['速度']
@@ -293,7 +294,7 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp", param
     count = 0
     not_feasible_trains = []
     feasible_provider = 'seq'
-    for idx, train in enumerate(sorted(train_list, key=lambda tr: tr.opt_cost_LR, reverse=True)):
+    for idx, train in enumerate(sorted(train_list, key=lambda tr: (tr.standard, tr.opt_cost_LR), reverse=True)):
         train.update_primal_graph(occupied_nodes, occupied_arcs, incompatible_arcs, safe_int)
 
         train.feasible_path, train.feasible_cost = train.shortest_path_primal()
@@ -403,7 +404,10 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp", param
             if train.is_feasible:
                 path_pool_manager.add_path(train.traNo, train.feasible_path)
             path_pool_manager.add_path(train.traNo, train.opt_path_LR)
-        logger.info(f"path pooling graph size: |V|: {path_pool_manager.graph.vcount()}, |E|: {path_pool_manager.graph.ecount()}")
+        try:
+            logger.info(f"path pooling graph size: |V|: {path_pool_manager.graph.vcount()}, |E|: {path_pool_manager.graph.ecount()}")
+        except AttributeError:
+            logger.info(f"path pooling graph size: |V|: {path_pool_manager.graph.number_of_nodes()}, |E|: {path_pool_manager.graph.number_of_edges()}")
         new_solution = path_pool_manager.largest_independent_vertex_sets()
         path_count = len(new_solution)
         logger.info("path pooling maximal cardinality: " + str(path_count))
@@ -447,6 +451,11 @@ def process_updata():
     miles_up = - miles_up + miles_up.max()
 
 
+def create_tr_subgraph(tr):
+    tr.create_subgraph(sec_times_all[tr.speed], time_span, params_sys.fix_preferred_time)
+    return tr
+
+
 if __name__ == '__main__':
 
     params_sys = SysParams()
@@ -485,12 +494,13 @@ if __name__ == '__main__':
     multiplier = init_multipliers(multiplier, v_station_list)
     logger.info(f"maximum estimate of active nodes {gc.vc}")
 
-    for tr in train_list:
-        tr.create_subgraph(sec_times_all[tr.speed], time_span)
+    with parallel_backend("loky", n_jobs=os.cpu_count()):
+        start_time = time.time()
+        train_list = Parallel()(delayed(create_tr_subgraph)(tr) for tr in train_list)
+    logger.info(f"parallel graph creation time: {time.time() - start_time:.2f}s")
 
     logger.info(f"step 2: graph building finish")
     logger.info(f"actual train size {len(train_list)}")
-
 
     interval = 1
     interval_primal = 1

@@ -53,6 +53,7 @@ class Train(object):
         self.timetable = {}  # 以virtual station为key，存int值
         self.speed = None  # 列车速度，300,350
         self.is_feasible = False
+        self.preferred_time = np.nan
         ##################
         # subgraphs for each train
         ##################
@@ -169,11 +170,11 @@ class Train(object):
 
         assert all([bound >= 0 for bound in self.right_time_bound.values()])
 
-    def create_subgraph(self, secTimes, TimeSpan):
+    def create_subgraph(self, secTimes, TimeSpan, fix_preferred_time):
         if self.backend == 0:
-            self.create_subgraph_nx(secTimes, TimeSpan)
+            self.create_subgraph_nx(secTimes, TimeSpan, fix_preferred_time)
         elif self.backend == 1:
-            self.create_subgraph_ig(secTimes, TimeSpan)
+            self.create_subgraph_ig(secTimes, TimeSpan, fix_preferred_time)
         else:
             raise ValueError(f"backend {self.backend} is not supported")
 
@@ -223,7 +224,7 @@ class Train(object):
     # Networkx
     #################
 
-    def create_subgraph_nx(self, secTimes, TimeSpan):
+    def create_subgraph_nx(self, secTimes, TimeSpan, fix_preferred_time):
         """
         create the subgraph for this train
             use the created nodelist
@@ -434,7 +435,7 @@ class Train(object):
             vertex_attrs={"name": self._ig_nodes}
         )
 
-    def create_subgraph_ig(self, secTimes, TimeSpan):
+    def create_subgraph_ig(self, secTimes, TimeSpan, fix_preferred_time):
         """
         create the subgraph for this train
             use the created nodelist
@@ -447,7 +448,15 @@ class Train(object):
 
         minArr = self.dep_LB  # for curSta(judge by dep)
 
-        for t in range(minArr, self.right_time_bound[self.v_staList[1]]):
+        if fix_preferred_time and not np.isnan(self.preferred_time):
+            interval = 10
+            assert minArr <= self.preferred_time < self.right_time_bound[self.v_staList[1]]
+            lb = max(int(self.preferred_time) - interval, minArr)
+            ub = min(int(self.preferred_time) + interval + 1, self.right_time_bound[self.v_staList[1]])
+        else:
+            lb = minArr
+            ub = self.right_time_bound[self.v_staList[1]]
+        for t in range(lb, ub):
             _s, _t = ('s_', -1), (self.staList[0] + '_', t)
             self._ig_add_vertex_pair(_s, _t)
 
