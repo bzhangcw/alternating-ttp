@@ -11,7 +11,7 @@ else:
 
 
 class PathPoolManager:
-    def __init__(self, train_list: List, safe_int: dict, up: bool, miv_mode: int = 1):
+    def __init__(self, train_list: List, safe_int: dict, up: bool, miv_mode: int = 0):
         self.safe_int = safe_int
         self.up = up
         self.to_path_ids = dict()

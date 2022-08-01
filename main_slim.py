@@ -494,7 +494,7 @@ if __name__ == '__main__':
     multiplier = init_multipliers(multiplier, v_station_list)
     logger.info(f"maximum estimate of active nodes {gc.vc}")
 
-    with parallel_backend("loky", n_jobs=os.cpu_count()):
+    with parallel_backend("loky", n_jobs=1):
         start_time = time.time()
         train_list = Parallel()(delayed(create_tr_subgraph)(tr) for tr in train_list)
     logger.info(f"parallel graph creation time: {time.time() - start_time:.2f}s")
