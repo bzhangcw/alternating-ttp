@@ -4,6 +4,7 @@ import os
 import time
 from collections import defaultdict
 from typing import *
+from tqdm import tqdm
 
 import jsp.model
 import matplotlib.pyplot as plt
@@ -401,9 +402,10 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp", param
         path_pool_manager: PathPoolManager = kwargs.get("path_pool_manager", None)
         assert path_pool_manager is not None
         for train in train_list:
-            if train.is_feasible:
-                path_pool_manager.add_path(train.traNo, train.feasible_path)
-            path_pool_manager.add_path(train.traNo, train.opt_path_LR)
+            path_list = gen_more_path(train)
+            for path in path_list:
+                path_pool_manager.add_path(train.traNo, path)
+            # logger.info(f"path pooling graph size: |V|: {path_pool_manager.graph.vcount()}, |E|: {path_pool_manager.graph.ecount()}")
         try:
             logger.info(f"path pooling graph size: |V|: {path_pool_manager.graph.vcount()}, |E|: {path_pool_manager.graph.ecount()}")
         except AttributeError:
@@ -430,6 +432,46 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp", param
         raise TypeError(f"method has no wrong type: {method}")
 
     return feasible_provider, path_cost_feasible, count, not_feasible_trains, buffer
+
+
+def gen_more_path(train):
+    T_feas = 1
+    path_list = []
+
+    if train.is_feasible:
+        for t in range(-T_feas, T_feas + 1):
+            new_path = train.feasible_path.copy()
+            valid = True
+            if t != 0:
+                for i in range(len(new_path) - 2):
+                    v_sta, time = new_path[i + 1]
+                    new_time = time + t
+                    if new_time < 0 or new_time > train.right_time_bound[v_sta]:
+                        valid = False
+                        break
+                    new_path[i + 1] = (v_sta, new_time)
+            if valid:
+                path_list.append(new_path)
+
+        T_dual = T_feas
+    else:
+        T_dual = 2 * T_feas
+
+    for t in range(-T_dual, T_dual + 1):
+        new_path = train.opt_path_LR.copy()
+        valid = True
+        if t != 0:
+            for i in range(len(new_path) - 2):
+                v_sta, time = new_path[i + 1]
+                new_time = time + t
+                if new_time < 0 or new_time > train.right_time_bound[v_sta]:
+                    valid = False
+                    break
+                new_path[i + 1] = (v_sta, new_time)
+        if valid:
+            path_list.append(new_path)
+
+    return path_list
 
 
 def init_multipliers(multiplier, v_station_list):
