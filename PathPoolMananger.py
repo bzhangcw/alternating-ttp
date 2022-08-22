@@ -138,17 +138,21 @@ class PathPoolManager:
         for path_id in path_id_list:
             self.path_scores[path_id] += 1
 
-    def remove_useless_path(self, n: int):
+    def remove_useless_path(self, n: int, reserve_paths: set):
         l = [k for k, v in sorted(self.path_scores.items(), key=lambda item: item[1])]
         path_to_remove = l[:n]
         nodes_to_remove = []
         for path_id in path_to_remove:
             train_id, path = self.inverse_path_ids[path_id]
+
+            if len(self.path_pool[train_id]) > 1 and path not in reserve_paths:
+                nodes_to_remove.append(self.graph.vs.select(name=path_id)[0])
+
             self.to_path_ids.pop(train_id, path)
             self.path_pool[train_id].remove(path_id)
             self.path_scores.pop(path_id)
             self.inverse_path_ids.pop(path_id)
-            nodes_to_remove.append(self.graph.vs.select(name=path_id)[0])
+
         self.graph.delete_vertices(nodes_to_remove)
 
     @staticmethod

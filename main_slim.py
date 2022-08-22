@@ -288,31 +288,49 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp", param
     """
 
     __unused = args, kwargs
-    path_cost_feasible = 0
-    occupied_nodes = {}
-    occupied_arcs = defaultdict(lambda: set())
-    incompatible_arcs = set()
-    count = 0
-    not_feasible_trains = []
     feasible_provider = 'seq'
-    for idx, train in enumerate(sorted(train_list, key=lambda tr: (tr.standard, tr.opt_cost_LR), reverse=True)):
-        train.update_primal_graph(occupied_nodes, occupied_arcs, incompatible_arcs, safe_int)
+    iter_max = 10
+    count = -1
+    new_train_order = sorted(train_list, key=lambda tr: (tr.standard, tr.opt_cost_LR), reverse=True)
 
-        train.feasible_path, train.feasible_cost = train.shortest_path_primal()
-        if not train.is_feasible:
-            path_cost_feasible += train.max_edge_weight * (
-                    len(train.staList) - 1)
-            not_feasible_trains.append(train.traNo)
-            continue
+    for j in range(iter_max):
+        path_cost_feasible = 0
+        occupied_nodes = {}
+        occupied_arcs = defaultdict(lambda: set())
+        incompatible_arcs = set()
+        count = 0
+        not_feasible_trains = []
+        train_order = new_train_order
+
+        for idx, train in enumerate(train_order):
+            train.update_primal_graph(occupied_nodes, occupied_arcs, incompatible_arcs, safe_int)
+
+            train.feasible_path, train.feasible_cost = train.shortest_path_primal()
+            if not train.is_feasible:
+                path_cost_feasible += train.max_edge_weight * (len(train.staList) - 1)
+                not_feasible_trains.append((idx, train.traNo))
+                continue
+            else:
+                count += 1
+            _this_occupied_nodes = get_occupied_nodes(train)
+            occupied_nodes.update(_this_occupied_nodes)
+            _this_occupied_arcs, _this_new_incompatible_arcs = get_occupied_arcs_and_clique(train.feasible_path)
+            for k, v in _this_occupied_arcs.items():
+                occupied_arcs[k].add(v)
+            incompatible_arcs.update(_this_new_incompatible_arcs)
+            path_cost_feasible += train.feasible_cost
+
+        if count > best_count:
+            print("better feasible number: {}".format(count))
+            best_count = count
+            if best_count == len(train_list):
+                print("all trains in the graph!")
+                break
         else:
-            count += 1
-        _this_occupied_nodes = get_occupied_nodes(train)
-        occupied_nodes.update(_this_occupied_nodes)
-        _this_occupied_arcs, _this_new_incompatible_arcs = get_occupied_arcs_and_clique(train.feasible_path)
-        for k, v in _this_occupied_arcs.items():
-            occupied_arcs[k].add(v)
-        incompatible_arcs.update(_this_new_incompatible_arcs)
-        path_cost_feasible += train.feasible_cost
+            first_train_idx = not_feasible_trains[0][0]
+            train_order.insert(0, train_order.pop(first_train_idx))
+            print("only feasible number: {}, incumbent: {}".format(count, best_count))
+
     logger.info(f"seq maximum cardinality: {count}")
     if method == "jsp":
         # path_method = "dual"  # use primal path
@@ -413,14 +431,13 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp", param
         new_solution = path_pool_manager.largest_independent_vertex_sets()
         path_pool_manager.update_usage(new_solution)
         path_count = len(new_solution)
-        path_pool_manager.remove_useless_path(path_pool_manager.graph.vcount()//2)
         logger.info("path pooling maximal cardinality: " + str(path_count))
+        feasible_train_paths = {}
         if path_count >= count:
             feasible_provider = 'path'
-            feasible_train_paths = {}
             for path_id in new_solution:
                 train_id, path = path_pool_manager.inverse_path_ids[path_id]
-                feasible_train_paths[train_id] = path
+                feasible_train_paths[train_id] = tuple(path)
 
             feasible_trains = set(feasible_train_paths.keys())
             for train in train_list:
@@ -430,6 +447,8 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp", param
                 else:
                     train.is_feasible = False
             count = path_count
+        # path_pool_manager.remove_useless_path(path_pool_manager.graph.vcount() // 2, set(feasible_train_paths.values()))
+
     else:
         raise TypeError(f"method has no wrong type: {method}")
 
