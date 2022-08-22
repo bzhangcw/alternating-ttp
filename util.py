@@ -95,7 +95,7 @@ class SubgradParam(object):
 
     def parse_environ(self):
         import os
-        self.primal_heuristic_method = os.environ.get('primal', 'path')
+        self.primal_heuristic_method = os.environ.get('primal', 'seq')
         self.dual_method = os.environ.get('dual', 'pdhg')
 
     def update_bound(self, lb):

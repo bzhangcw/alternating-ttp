@@ -290,7 +290,7 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp", param
     __unused = args, kwargs
     feasible_provider = 'seq'
     iter_max = 10
-    count = -1
+    best_count = count = -1
     new_train_order = sorted(train_list, key=lambda tr: (tr.standard, tr.opt_cost_LR), reverse=True)
 
     for j in range(iter_max):
@@ -321,15 +321,15 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp", param
             path_cost_feasible += train.feasible_cost
 
         if count > best_count:
-            print("better feasible number: {}".format(count))
+            logger.info("better feasible number: {}".format(count))
             best_count = count
             if best_count == len(train_list):
-                print("all trains in the graph!")
+                logger.info("all trains in the graph!")
                 break
         else:
             first_train_idx = not_feasible_trains[0][0]
             train_order.insert(0, train_order.pop(first_train_idx))
-            print("only feasible number: {}, incumbent: {}".format(count, best_count))
+            logger.info("only feasible number: {}, incumbent: {}".format(count, best_count))
 
     logger.info(f"seq maximum cardinality: {count}")
     if method == "jsp":
