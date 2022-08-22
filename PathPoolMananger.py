@@ -19,6 +19,7 @@ class PathPoolManager:
         self.train_ids_dict = {tr.traNo: tr for tr in self.train_list}
         self.path_pool = {train_id: [] for train_id in self.train_ids_dict}
         self.inverse_path_ids = {}
+        self.path_scores = {}
         self.miv_mode = miv_mode
         if graph_tool == "igraph":
             self.graph = ig.Graph(directed=False)
@@ -34,6 +35,7 @@ class PathPoolManager:
         self.to_path_ids[train_id, path] = path_id
         self.path_pool[train_id].append(path_id)
         self.inverse_path_ids[path_id] = train_id, path
+        self.path_scores[path_id] = 0
 
         if graph_tool == "igraph":
             self.graph.add_vertex(path_id)
@@ -55,7 +57,9 @@ class PathPoolManager:
                         self.pairwise_path_conflict(train1, train2, path, path2)):  # in the same pool
                     conflict_path_pairs.append((path_id, path2_id))
         for path1_id, path2_id in conflict_path_pairs:
-            self.graph.add_edge(path1_id, path2_id)
+            v1 = self.graph.vs.select(name=path1_id)[0]
+            v2 = self.graph.vs.select(name=path2_id)[0]
+            self.graph.add_edge(v1, v2)
 
     def maximal_independent_vertex_sets(self):
         if graph_tool == "igraph":
@@ -129,6 +133,23 @@ class PathPoolManager:
                                 break
             assert len(mis) <= len(self.train_list)
             return tuple(mis)
+
+    def update_usage(self, path_id_list):
+        for path_id in path_id_list:
+            self.path_scores[path_id] += 1
+
+    def remove_useless_path(self, n: int):
+        l = [k for k, v in sorted(self.path_scores.items(), key=lambda item: item[1])]
+        path_to_remove = l[:n]
+        nodes_to_remove = []
+        for path_id in path_to_remove:
+            train_id, path = self.inverse_path_ids[path_id]
+            self.to_path_ids.pop(train_id, path)
+            self.path_pool[train_id].remove(path_id)
+            self.path_scores.pop(path_id)
+            self.inverse_path_ids.pop(path_id)
+            nodes_to_remove.append(self.graph.vs.select(name=path_id)[0])
+        self.graph.delete_vertices(nodes_to_remove)
 
     @staticmethod
     def _mivs(g):

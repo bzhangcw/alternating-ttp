@@ -411,7 +411,9 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp", param
         except AttributeError:
             logger.info(f"path pooling graph size: |V|: {path_pool_manager.graph.number_of_nodes()}, |E|: {path_pool_manager.graph.number_of_edges()}")
         new_solution = path_pool_manager.largest_independent_vertex_sets()
+        path_pool_manager.update_usage(new_solution)
         path_count = len(new_solution)
+        path_pool_manager.remove_useless_path(path_pool_manager.graph.vcount()//2)
         logger.info("path pooling maximal cardinality: " + str(path_count))
         if path_count >= count:
             feasible_provider = 'path'
@@ -435,7 +437,7 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp", param
 
 
 def gen_more_path(train):
-    T_feas = 1
+    T_feas = 0
     path_list = []
 
     if train.is_feasible:
@@ -455,7 +457,7 @@ def gen_more_path(train):
 
         T_dual = T_feas
     else:
-        T_dual = 2 * T_feas
+        T_dual = 2
 
     for t in range(-T_dual, T_dual + 1):
         new_path = train.opt_path_LR.copy()
