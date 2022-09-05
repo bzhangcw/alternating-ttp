@@ -5,11 +5,7 @@ import logging
 from collections import defaultdict
 from itertools import combinations
 import pandas as pd
-from jsp.util import num2time
-
-from gurobipy import GRB
-
-from constr_verification import getConstrByPrefix
+import math
 
 ##############################
 # DEFAULTS
@@ -51,6 +47,25 @@ class GraphCounter(object):
 
 
 gc = GraphCounter()
+
+
+def num2time(num):
+    """
+    input:  num is a floating point number in minutes
+
+    output: t is time string
+            t's format is 'hour:min:sec'
+    """
+    num_dec, num_int = math.modf(num)
+    s = round(num_dec * 60)  # second
+    if s >= 60:
+        num_int = num_int + 1
+        s = 0
+    num_int = int(num_int)
+    h = num_int // 60  # hour
+    m = math.floor(num_int - h * 60)  # min
+    t = "{0:d}:{1:02d}:{2:02d}".format(h, m, s)  # time string
+    return t
 
 
 class SysParams(object):
@@ -221,6 +236,8 @@ def fix_train_at_station(model, x_var, feasible_train_list):
 
 
 def IIS_resolve(model, iter_max=5):
+    from constr_verification import getConstrByPrefix
+    from gurobipy import GRB
     headway_fix_constrs = getConstrByPrefix(model, "headway_fix")
     iter = 0
     while iter < iter_max and model.status == GRB.INFEASIBLE:

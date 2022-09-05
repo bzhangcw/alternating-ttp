@@ -1,28 +1,26 @@
 import datetime
-import logging
 import os
 import time
-from collections import defaultdict
 from typing import *
-from tqdm import tqdm
 
-import jsp.model
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
-import util_output as uo
-from Train import *
-from jsp.main import main_jsp, station_name_list
-from jsp.util import get_train_table
-from jsp.dataLoader import write_train_table
-from gurobipy import GRB, Var
-from PathPoolMananger import PathPoolManager
 from joblib import Parallel, delayed, parallel_backend
+
+import util_output as uo
+from PathPoolMananger import PathPoolManager
+from Train import *
 
 logging.basicConfig(format="%(asctime)s: %(message)s", level=logging.INFO)
 logger = logging.getLogger("railway")
 logger.setLevel(logging.INFO)
 
+station_name_list = [
+    '北京南', '廊坊', '京津线路所', '津沪线路所', '天津南',
+    '沧州西', '德州东', '济南西', '崔马庄线路所', '泰安',
+    '曲阜东', '滕州东', '枣庄', '徐州东', '宿州东',
+    '蚌埠南', '定远', '滁州', '扬州线路所', '南京南',
+    '秦淮河线路所', '镇江南', '丹阳北', '常州北', '无锡东',
+    '苏州北', '昆山南', '黄渡线路所', '上海虹桥'
+]
 '''
 initialize stations, sections, trains and train arcs
 '''
@@ -171,14 +169,18 @@ def update_yvc_multiplier(multiplier):
                 interval = max(safe_int[c + c][station, 350], safe_int[c + c][station, 300])
                 if c == "a":
                     interval2 = max(safe_int["pa"][station, 350], safe_int["pa"][station, 300])
-                    yvc_multiplier[v_station, t][c] = sum(multiplier[v_station, t - dt]["aa"] for dt in range(min(interval, t + 1))) \
+                    yvc_multiplier[v_station, t][c] = sum(
+                        multiplier[v_station, t - dt]["aa"] for dt in range(min(interval, t + 1))) \
                                                       + multiplier[v_station, t]["ap"] \
-                                                      + sum(multiplier[v_station, t - dt]["pa"] for dt in range(1, min(interval2, t + 1)))
+                                                      + sum(
+                        multiplier[v_station, t - dt]["pa"] for dt in range(1, min(interval2, t + 1)))
                 elif c == "p":
                     interval2 = max(safe_int["ap"][station, 350], safe_int["ap"][station, 300])
-                    yvc_multiplier[v_station, t][c] = sum(multiplier[v_station, t - dt]["pp"] for dt in range(min(interval, t + 1))) \
+                    yvc_multiplier[v_station, t][c] = sum(
+                        multiplier[v_station, t - dt]["pp"] for dt in range(min(interval, t + 1))) \
                                                       + multiplier[v_station, t]["pa"] \
-                                                      + sum(multiplier[v_station, t - dt]["ap"] for dt in range(1, min(interval2, t + 1)))
+                                                      + sum(
+                        multiplier[v_station, t - dt]["ap"] for dt in range(1, min(interval2, t + 1)))
                 else:
                     yvc_multiplier[v_station, t][c] = 0
         elif v_station.endswith("_"):
@@ -186,13 +188,16 @@ def update_yvc_multiplier(multiplier):
                 interval = max(safe_int[c + c][station, 350], safe_int[c + c][station, 300])
                 if c == "s":
                     interval2 = max(safe_int["ps"][station, 350], safe_int["ps"][station, 300])
-                    yvc_multiplier[v_station, t][c] = sum(multiplier[v_station, t - dt]["ss"] for dt in range(min(interval, t + 1))) \
+                    yvc_multiplier[v_station, t][c] = sum(
+                        multiplier[v_station, t - dt]["ss"] for dt in range(min(interval, t + 1))) \
                                                       + multiplier[v_station, t]["sp"] \
-                                                      + sum(multiplier[v_station, t - dt]["ps"] for dt in range(1, min(interval2, t + 1)))
+                                                      + sum(
+                        multiplier[v_station, t - dt]["ps"] for dt in range(1, min(interval2, t + 1)))
                 elif c == "p":
                     interval2 = max(safe_int["sp"][station, 350], safe_int["sp"][station, 300])
                     yvc_multiplier[v_station, t][c] = multiplier[v_station, t]["ps"] \
-                                                      + sum(multiplier[v_station, t - dt]["sp"] for dt in range(1, min(interval2, t + 1)))
+                                                      + sum(
+                        multiplier[v_station, t - dt]["sp"] for dt in range(1, min(interval2, t + 1)))
 
 
 def update_subgradient_dict(node_occupy_dict):
@@ -203,7 +208,8 @@ def update_subgradient_dict(node_occupy_dict):
             station = node[0].replace("_", "")
             interval = max(safe_int[cc][station, 350], safe_int[cc][station, 300])
             subgradient_dict[node][cc] = node_occupy_dict[node][cc[0]] \
-                                         + sum(node_occupy_dict[node[0], node[1] + t][cc[1]] for t in range(1, min(interval, time_span - node[1]))) \
+                                         + sum(
+                node_occupy_dict[node[0], node[1] + t][cc[1]] for t in range(1, min(interval, time_span - node[1]))) \
                                          - 1
     return subgradient_dict
 
@@ -229,7 +235,8 @@ def update_step_size(params_subgrad, method="polyak"):
             params_subgrad.alpha = 0.5 / 20
     elif method == "polyak":
         subg_norm = np.linalg.norm([v for d in subgradient_dict.values() for v in d.values()]) ** 2
-        params_subgrad.alpha = params_subgrad.kappa * (params_subgrad.ub_arr[-1] - params_subgrad.lb_arr[-1]) / subg_norm
+        params_subgrad.alpha = params_subgrad.kappa * (
+                params_subgrad.ub_arr[-1] - params_subgrad.lb_arr[-1]) / subg_norm
     else:
         raise ValueError(f"undefined method {method}")
 
@@ -333,6 +340,12 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp", param
 
     logger.info(f"seq maximum cardinality: {count}")
     if method == "jsp":
+        # ONLY this part need the JSP module and solvers
+        from jsp.main import main_jsp, station_name_list
+        from jsp.util import get_train_table
+        from jsp.dataLoader import write_train_table
+        from gurobipy import GRB, Var
+        from constr_verification import getConstrByPrefix
         # path_method = "dual"  # use primal path
         path_method = "primal"
         max_iter = 30
@@ -413,7 +426,8 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp", param
             logger.info(f"jsp maximum cardinality: {jsp_count}")
             train_table = get_train_table(train_list, d_var, a_var)
             direction = "up" if params_sys.up == 1 else "down"
-            write_train_table(params_sys.fdir_result + f"/lr_{direction}.csv", train_table, station_name_list, direction)
+            write_train_table(params_sys.fdir_result + f"/lr_{direction}.csv", train_table, station_name_list,
+                              direction)
     elif method == "seq":
         pass
     elif method == "path":
@@ -425,9 +439,11 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp", param
                 path_pool_manager.add_path(train.traNo, path)
             # logger.info(f"path pooling graph size: |V|: {path_pool_manager.graph.vcount()}, |E|: {path_pool_manager.graph.ecount()}")
         try:
-            logger.info(f"path pooling graph size: |V|: {path_pool_manager.graph.vcount()}, |E|: {path_pool_manager.graph.ecount()}")
+            logger.info(
+                f"path pooling graph size: |V|: {path_pool_manager.graph.vcount()}, |E|: {path_pool_manager.graph.ecount()}")
         except AttributeError:
-            logger.info(f"path pooling graph size: |V|: {path_pool_manager.graph.number_of_nodes()}, |E|: {path_pool_manager.graph.number_of_edges()}")
+            logger.info(
+                f"path pooling graph size: |V|: {path_pool_manager.graph.number_of_nodes()}, |E|: {path_pool_manager.graph.number_of_edges()}")
         new_solution = path_pool_manager.largest_independent_vertex_sets()
         path_pool_manager.update_usage(new_solution)
         path_count = len(new_solution)
@@ -618,7 +634,8 @@ if __name__ == '__main__':
             logger.info("primal stage finished")
             direction = "up" if params_sys.up == 1 else "down"
             train_table = get_train_table_from_feas_path(train_list)
-            write_train_table_feas_path(params_sys.fdir_result + f"/lr_{'up' if params_sys.up else 'down'}.csv", train_table, station_name_list, direction)
+            write_train_table_feas_path(params_sys.fdir_result + f"/lr_{'up' if params_sys.up else 'down'}.csv",
+                                        train_table, station_name_list, direction)
 
             # update best primal solution
             if count > max_number:

@@ -3,7 +3,9 @@ output utilities
 """
 
 from typing import *
+import matplotlib
 
+matplotlib.use("Agg", force=True)
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -94,16 +96,27 @@ def plot_timetables_h5(train_list, miles, station_list, param_sys: SysParams, pa
             sta = train.staList[sta_id]
             if sta_id != 0:  # 不为首站, 有到达
                 if "_" + sta in train.v_staList:
-                    xlist.append(train.timetable["_" + sta])
-                    ylist.append(miles[station_list.index(sta)])
+                    try:
+                        xlist.append(train.timetable["_" + sta])
+                        ylist.append(miles[station_list.index(sta)])
+                    except:
+                        pass
             if sta_id != len(train.staList) - 1:  # 不为末站，有出发
                 if sta + "_" in train.v_staList:
-                    xlist.append(train.timetable[sta + "_"])
-                    ylist.append(miles[station_list.index(sta)])
+                    try:
+                        xlist.append(train.timetable[sta + "_"])
+                        ylist.append(miles[station_list.index(sta)])
+                    except:
+                        pass
         fig.add_scatter(
             mode='lines+markers',
             x=xlist, y=ylist,
-            line={"dash": "solid"},
+            line=dict(
+                dash="solid", width=1
+            ),
+            marker=dict(
+                size=1.5
+            ),
             name=f"train-{train.traNo}:{train.speed}",
         )
         plotted.append(train.traNo)
@@ -123,6 +136,30 @@ def plot_timetables_h5(train_list, miles, station_list, param_sys: SysParams, pa
         f"{param_sys.fdir_result}/{param_subgrad.dual_method}.{param_subgrad.feasible_provider}@{param_subgrad.iter}-{param_sys.train_size}.{param_sys.station_size}.{param_sys.time_span}.html",
     )
 
+    # PUBLICATION
+    fig.update_layout(
+        font_family="Latin Modern Roman",
+        font_color="rgb(0,0,0)",
+        xaxis=dict(
+            title=f"epoch",
+            color='black',
+        ),
+        font=dict(family="Latin Modern Roman", size=12),
+        showlegend=False,
+        title=None
+    )
+    fig.write_image(
+        f"{param_sys.fdir_result}/{param_subgrad.dual_method}.{param_subgrad.feasible_provider}@{param_subgrad.iter}-{param_sys.train_size}.{param_sys.station_size}.{param_sys.time_span}.png",
+        height=1400,
+        width=2000,
+        scale=3
+    )
+    fig.write_image(
+        f"{param_sys.fdir_result}/{param_subgrad.dual_method}.{param_subgrad.feasible_provider}@{param_subgrad.iter}-{param_sys.train_size}.{param_sys.station_size}.{param_sys.time_span}.pdf",
+        height=1400,
+        width=2000,
+        scale=3
+    )
 
 def plot_timetables(train_list, miles, station_list, param_sys: SysParams, param_subgrad: SubgradParam,
                     selective: List = None):
