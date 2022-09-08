@@ -1,7 +1,7 @@
 # Here defines the info about the trains
 import copy
 import logging
-from typing import Optional
+from typing import Optional, List
 
 import numpy as np
 import sortedcollections
@@ -9,6 +9,46 @@ import sortedcollections
 import igraph as ig
 import networkx as nx
 from util import *
+
+
+class VirtualStation(object):
+
+    def __init__(self, station, io, down):
+        """
+        # down = 1 up = 0
+        # in = 1 out  = 0
+        Args:
+            station:
+            io:
+            down:
+        """
+        self.s = station
+        self.io = io
+        self.down = down
+
+        self.str = self.__str__()
+
+    def __str__(self):
+        _affix = "" if self.io == 1 else "->"
+        _prefix = "->" if self.io == 1 else ""
+        if self.down is None:
+            return f"{_prefix}[{self.s}]{_affix}"
+        _term = "+" if self.down == 1 else "-"
+
+        return f"{_prefix}[{self.s}{_term}]{_affix}"
+
+    def __repr__(self):
+        return self.str
+
+    def __hash__(self):
+        return self.str.__hash__()
+
+    def __eq__(self, other):
+        return self.__hash__() == other.__hash__()
+
+
+V_START = VirtualStation("s", 0, None)
+V_END = VirtualStation("t", 1, None)
 
 
 class Train(object):
@@ -21,7 +61,7 @@ class Train(object):
         :param dep_UB:
         '''
         self.traNo = traNo  # 列车车次
-        self.up = 1  # 1-down 0-up
+        self.down = 0  # 1-up 0-down
         self.dep_LB = dep_LB  # 始发时间窗下界
         self.dep_UB = dep_UB  # 始发时间窗上界
         self.arcs = {}
@@ -68,8 +108,8 @@ class Train(object):
         #   change with iteration and occupied nodes and maybe incompatible edges
         self.subgraph_primal = None
         #
-        self.source = 's_', -1
-        self.sink = '_t', -1
+        self.source = V_START, -1
+        self.sink = V_END, -1
         self.logger = logging.getLogger(f"train#{self.traNo}")
 
         ###############
@@ -82,6 +122,10 @@ class Train(object):
         self._ig_t_primal = 0
         self.max_edge_weight = 0
 
+        ###############
+        # following trains
+        self.followons: List[Train] = []
+
     def __hash__(self):
         return self.traNo.__hash__()
 
@@ -91,14 +135,13 @@ class Train(object):
     def __repr__(self):
         return "train" + str(self.traNo)
 
-    def init_traStaList(self, allStaList):
+    def init_v_stations(self):
         '''
         create train staList, include s_, _t， only contains nodes associated with this train
-        :param allStaList:
         :return:
         '''
         all_station_list = list(self.linePlan.keys())
-        if self.up == 0:
+        if self.down == 0:
             all_station_list.reverse()
         for station in all_station_list:
             if self.linePlan[station] in {-1, 1}:
@@ -120,16 +163,18 @@ class Train(object):
             if station == arrSta:
                 in_rail_flag = 0
 
-        self.v_staList.append('s_')
+        self.v_staList.append(V_START)
         for i, station in enumerate(self.staList):
             if i != 0:
-                self.v_staList.append('_' + station)
-                self.v_sta_type['_' + station] = "p" if self.linePlan[station] in (0, -1) else "a"
-            if i != len(self.staList) - 1:  # 若不为实际车站的最后一站，则加上sta_
-                self.v_staList.append(station + '_')
-                self.v_sta_type[station + '_'] = "p" if self.linePlan[station] in (0, -1) else "s"
+                _vs = VirtualStation(station, 1, self.down)
+                self.v_staList.append(_vs)
+                self.v_sta_type[_vs] = "p" if self.linePlan[station] in (0, -1) else "a"
+            if i != len(self.staList) - 1:  # if not last, has an io=0 virtual station
+                _vs = VirtualStation(station, 0, self.down)
+                self.v_staList.append(_vs)
+                self.v_sta_type[_vs] = "p" if self.linePlan[station] in (0, -1) else "s"
 
-        self.v_staList.append('_t')
+        self.v_staList.append(V_END)
 
     def _subgraph_copy(self):
         return copy.deepcopy(self.subgraph)
@@ -337,14 +382,19 @@ class Train(object):
         subg = self.subgraph
         if option == "lagrange":
             price = [(i, j,
-                      {'price': v['weight'] + xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]],
-                       'multiplier': xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]]}) if j[0] not in ["s_", "_t"] else
+                      {'price': v['weight'] + xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][
+                          self.v_sta_type[j[0]]],
+                       'multiplier': xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][
+                           self.v_sta_type[j[0]]]}) if j[0] not in ["s_", "_t"] else
                      (i, j, {"price": v["weight"], 'multiplier': 0})
                      for i, j, v in subg.edges(data=True)]
         elif option == "pdhg":
             price = [(i, j,
-                      {'price': v['weight'] + xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]] + gamma * (0.5 - ((i, j) in self.opt_path_LR_dict)),
-                       'multiplier': xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]] + gamma * (0.5 - ((i, j) in self.opt_path_LR_dict))}) if j[0] not in ["s_", "_t"] else
+                      {'price': v['weight'] + xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][
+                          self.v_sta_type[j[0]]] + gamma * (0.5 - ((i, j) in self.opt_path_LR_dict)),
+                       'multiplier': xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][
+                           self.v_sta_type[j[0]]] + gamma * (0.5 - ((i, j) in self.opt_path_LR_dict))}) if j[0] not in [
+                "s_", "_t"] else
                      (i, j, {"price": v["weight"], 'multiplier': 0})
                      for i, j, v in subg.edges(data=True)]
         else:
@@ -367,8 +417,10 @@ class Train(object):
         for (i, t), c in occupied_nodes.items():
             _type_affix_after = c + self.v_sta_type.get(i, '%')
             _type_affix_before = self.v_sta_type.get(i, '%') + c
-            radius_after = _safe_int[_type_affix_after][i.strip("_"), self.speed] if _type_affix_after in _safe_int else 0
-            radius_before = _safe_int[_type_affix_before][i.strip("_"), self.speed] if _type_affix_before in _safe_int else 0  # todo: use speed of rear train
+            radius_after = _safe_int[_type_affix_after][
+                i.s, self.speed] if _type_affix_after in _safe_int else 0
+            radius_before = _safe_int[_type_affix_before][
+                i.s, self.speed] if _type_affix_before in _safe_int else 0  # todo: use speed of rear train
             radius[i, t] = (radius_before, radius_after)
         # ii. then remove nodes defined by radius
         _all_nodes = ((i, t + dlt) for (i, t), (r_b, r_a) in radius.items() for dlt in range(-r_b + 1, r_a))
@@ -412,7 +464,7 @@ class Train(object):
         """
         add vertex pair (an edge) to igraph backend.
         """
-        if _t[0] not in ["s_", "_t"]:
+        if _t[0] not in [V_START, V_END]:
             xa_map[_s, _t][self.traNo][self.v_sta_type[_t[0]]] += 1
         if self.backend == 0:
             return -1
@@ -457,7 +509,8 @@ class Train(object):
             lb = minArr
             ub = self.right_time_bound[self.v_staList[1]]
         for t in range(lb, ub):
-            _s, _t = ('s_', -1), (self.staList[0] + '_', t)
+            _vs = VirtualStation(self.staList[0], io=0, down=self.down)
+            _s, _t = (V_START, -1), (_vs, t)
             self._ig_add_vertex_pair(_s, _t)
 
         '''
@@ -467,9 +520,9 @@ class Train(object):
             curSta = self.staList[i]
             nextSta = self.staList[i + 1]
             # virtual dual stations
-            curSta_dep = curSta + "_"
-            nextSta_arr = "_" + nextSta
-            nextSta_dep = nextSta + "_"
+            curSta_dep = VirtualStation(curSta, 0, self.down)  # curSta + "_"
+            nextSta_arr = VirtualStation(nextSta, 1, self.down)  # "_" + nextSta
+            nextSta_dep = VirtualStation(nextSta, 0, self.down)  # nextSta + "_"
 
             secRunTime = secTimes[curSta, nextSta]  # 区间运行时分
 
@@ -519,9 +572,9 @@ class Train(object):
         '''
 
         for t in range(minArr, self.right_time_bound[self.v_staList[-2]]):
-            finale_name = '_' + self.staList[-1]
+            v_finale = self.v_staList[-2]  # '_' + self.staList[-1]
             # igraph backend
-            _s, _t = (finale_name, t), ('_t', -1)
+            _s, _t = (v_finale, t), (V_END, -1)  # ('_t', -1)
             self._ig_add_vertex_pair(_s, _t)
 
         self._init_subgraph_ig()
@@ -535,13 +588,16 @@ class Train(object):
         """
         self.opt_path_LR_dict = {node: None for node in self.opt_path_LR}
         subg = self.subgraph
+        v_null = {V_START, V_END}
         for e in subg.es:
             i, j = e['name']
             w = e['weight']
             if option == "lagrange":
-                e["multiplier"] = xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]] if j[0] not in ["s_", "_t"] else 0
+                e["multiplier"] = xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][
+                    self.v_sta_type[j[0]]] if j[0] not in v_null else 0
             elif option == "pdhg":
-                e["multiplier"] = xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]] + gamma * (0.5 - ((i, j) in self.opt_path_LR_dict)) if j[0] not in ["s_", "_t"] else 0
+                e["multiplier"] = xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][
+                    self.v_sta_type[j[0]]] + gamma * (0.5 - ((i, j) in self.opt_path_LR_dict)) if j[0] not in v_null else 0
             else:
                 raise ValueError(f"option {option} is not supported")
             p = w + e["multiplier"]
@@ -562,8 +618,10 @@ class Train(object):
         for (i, t), c in occupied_nodes.items():
             _type_affix_after = c + self.v_sta_type.get(i, '%')
             _type_affix_before = self.v_sta_type.get(i, '%') + c
-            radius_after = _safe_int[_type_affix_after][i.strip("_"), self.speed] if _type_affix_after in _safe_int else 0
-            radius_before = _safe_int[_type_affix_before][i.strip("_"), self.speed] if _type_affix_before in _safe_int else 0  # todo: use speed of rear train
+            radius_after = _safe_int[_type_affix_after][
+                i.s, self.speed] if _type_affix_after in _safe_int else 0
+            radius_before = _safe_int[_type_affix_before][
+                i.s, self.speed] if _type_affix_before in _safe_int else 0  # todo: use speed of rear train
             radius[i, t] = (radius_before, radius_after)
         # ii. then remove nodes defined by radius
         _all_nodes = ((i, t + dlt) for (i, t), (r_b, r_a) in radius.items() for dlt in range(-r_b + 1, r_a))

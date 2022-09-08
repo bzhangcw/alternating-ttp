@@ -75,16 +75,16 @@ class SysParams(object):
     train_size = 0
     time_span = 0
     iter_max = 0
-    up = 0
+    down = 0
     fix_preferred_time = True
 
     def parse_environ(self):
         import os
         self.station_size = int(os.environ.get('station_size', 29))
-        self.train_size = int(os.environ.get('train_size', 292))
+        self.train_size = int(os.environ.get('train_size', 10))
         self.time_span = int(os.environ.get('time_span', 1080))
         self.iter_max = int(os.environ.get('iter_max', 100))
-        self.up = int(os.environ.get('up', 0))
+        self.down = int(os.environ.get('down', -1))
         self.fix_preferred_time = int(os.environ.get('fix_preferred_time', True))
 
 
@@ -294,8 +294,8 @@ def get_train_table_from_feas_path(train_list):
         train_id = train.traNo
         train_table[train_id] = {}
         for i, (v_station, t) in enumerate(train.feasible_path[1:-1]):
-            station = v_station.replace("_", "")
-            run_type = 'dep' if v_station.endswith("_") else 'arr'
+            station = v_station.s
+            run_type = 'dep' if v_station.io == 0 else 'arr'
 
             train_table[train_id].setdefault(station, {})
             if i == 0 or i == len(train.feasible_path) - 3:
@@ -320,17 +320,11 @@ def write_train_table_feas_path(path, train_table, station_name_list, direction=
 
     rows = []
     for train_id in train_list:
-        if direction == 'up':
-            trn = 2 * train_id
-        elif direction == 'down':
-            trn = 2 * train_id - 1
-        else:
-            raise ValueError("The direction of train should be up or down.")
         k = 0
         train_route = train_table[train_id]
         for station, times in train_route.items():
             row = {'车次ID': train_id,
-                   '车次': trn,
+                   '车次': train_id,
                    '站序': k,
                    '站名': station_name_list[int(station) - 1],
                    '到点': num2time(times['arr']),

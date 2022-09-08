@@ -92,22 +92,21 @@ def plot_timetables_h5(train_list, miles, station_list, param_sys: SysParams, pa
         ylist = []
         if not train.is_best_feasible:
             continue
-        for sta_id in range(len(train.staList)):
-            sta = train.staList[sta_id]
-            if sta_id != 0:  # 不为首站, 有到达
-                if "_" + sta in train.v_staList:
-                    try:
-                        xlist.append(train.timetable["_" + sta])
-                        ylist.append(miles[station_list.index(sta)])
-                    except:
-                        pass
-            if sta_id != len(train.staList) - 1:  # 不为末站，有出发
-                if sta + "_" in train.v_staList:
-                    try:
-                        xlist.append(train.timetable[sta + "_"])
-                        ylist.append(miles[station_list.index(sta)])
-                    except:
-                        pass
+
+        for v_station in train.v_staList[1:-1]:
+            sta = v_station.s
+
+            try:
+                xlist.append(train.timetable[v_station])
+                ylist.append(miles[station_list.index(sta)])
+            except:
+                pass
+
+            # try:
+            #     xlist.append(train.timetable[v_station])
+            #     ylist.append(miles[station_list.index(sta)])
+            # except:
+            #     pass
         fig.add_scatter(
             mode='lines+markers',
             x=xlist, y=ylist,
@@ -161,48 +160,49 @@ def plot_timetables_h5(train_list, miles, station_list, param_sys: SysParams, pa
         scale=3
     )
 
-def plot_timetables(train_list, miles, station_list, param_sys: SysParams, param_subgrad: SubgradParam,
-                    selective: List = None):
-    for i in range(len(train_list)):
-        train = train_list[i]
-        if selective is not None and train.traNo not in selective:
-            continue
-        xlist = []
-        ylist = []
-        if not train.is_best_feasible:
-            continue
-        for sta_id in range(len(train.staList)):
-            sta = train.staList[sta_id]
-            if sta_id != 0:  # 不为首站, 有到达
-                if "_" + sta in train.v_staList:
-                    xlist.append(train.timetable["_" + sta])
-                    ylist.append(miles[station_list.index(sta)])
-            if sta_id != len(train.staList) - 1:  # 不为末站，有出发
-                if sta + "_" in train.v_staList:
-                    xlist.append(train.timetable[sta + "_"])
-                    ylist.append(miles[station_list.index(sta)])
-        plt.plot(xlist, ylist, color=color_value[str(i % 7)], linewidth=1.5)
-        plt.text(xlist[0] + 0.8, ylist[0] + 4, train.traNo, ha='center', va='bottom',
-                 color=color_value[str(i % 7)], weight='bold', family='Times', fontsize=9)
 
-    plt.grid(True)  # show the grid
-    plt.ylim(0, miles[-1])  # y range
-
-    plt.xlim(0, param_sys.time_span)  # x range
-    sticks = 20
-    plt.xticks(np.linspace(0, param_sys.time_span, sticks))
-
-    plt.yticks(miles, station_list, family='Times')
-    plt.xlabel('Time (min)', family='Times new roman')
-    plt.ylabel('Space (km)', family='Times new roman')
-    plt.title(
-        f"Best primal solution of # trains, station, periods: ({len(train_list)}, {param_sys.station_size}, {param_sys.time_span})\n"
-        f"Number of trains {param_subgrad.max_number}", fontdict={"weight": 500, "size": 20})
-
-    plt.savefig(
-        f"{param_sys.fdir_result}/{param_subgrad.dual_method}.{param_subgrad.feasible_provider}@{param_subgrad.iter}-{param_sys.train_size}.{param_sys.station_size}.{param_sys.time_span}.png",
-        dpi=500)
-    plt.clf()
+# def plot_timetables(train_list, miles, station_list, param_sys: SysParams, param_subgrad: SubgradParam,
+#                     selective: List = None):
+#     for i in range(len(train_list)):
+#         train = train_list[i]
+#         if selective is not None and train.traNo not in selective:
+#             continue
+#         xlist = []
+#         ylist = []
+#         if not train.is_best_feasible:
+#             continue
+#         for sta_id in range(len(train.staList)):
+#             sta = train.staList[sta_id]
+#             if sta_id != 0:  # 不为首站, 有到达
+#                 if "_" + sta in train.v_staList:
+#                     xlist.append(train.timetable["_" + sta])
+#                     ylist.append(miles[station_list.index(sta)])
+#             if sta_id != len(train.staList) - 1:  # 不为末站，有出发
+#                 if sta + "_" in train.v_staList:
+#                     xlist.append(train.timetable[sta + "_"])
+#                     ylist.append(miles[station_list.index(sta)])
+#         plt.plot(xlist, ylist, color=color_value[str(i % 7)], linewidth=1.5)
+#         plt.text(xlist[0] + 0.8, ylist[0] + 4, train.traNo, ha='center', va='bottom',
+#                  color=color_value[str(i % 7)], weight='bold', family='Times', fontsize=9)
+# 
+#     plt.grid(True)  # show the grid
+#     plt.ylim(0, miles[-1])  # y range
+# 
+#     plt.xlim(0, param_sys.time_span)  # x range
+#     sticks = 20
+#     plt.xticks(np.linspace(0, param_sys.time_span, sticks))
+# 
+#     plt.yticks(miles, station_list, family='Times')
+#     plt.xlabel('Time (min)', family='Times new roman')
+#     plt.ylabel('Space (km)', family='Times new roman')
+#     plt.title(
+#         f"Best primal solution of # trains, station, periods: ({len(train_list)}, {param_sys.station_size}, {param_sys.time_span})\n"
+#         f"Number of trains {param_subgrad.max_number}", fontdict={"weight": 500, "size": 20})
+# 
+#     plt.savefig(
+#         f"{param_sys.fdir_result}/{param_subgrad.dual_method}.{param_subgrad.feasible_provider}@{param_subgrad.iter}-{param_sys.train_size}.{param_sys.station_size}.{param_sys.time_span}.png",
+#         dpi=500)
+#     plt.clf()
 
 
 def plot_convergence(param_sys: SysParams, param_subgrad: SubgradParam):

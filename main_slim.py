@@ -3,6 +3,7 @@ import os
 import time
 from typing import *
 
+import pandas as pd
 from joblib import Parallel, delayed, parallel_backend
 
 import util_output as uo
@@ -30,6 +31,7 @@ v_station_list = []  # 时空网车站列表，车站一分为二 # 源节点s, 
 miles = []
 miles_up = []
 train_list: List[Train] = []
+train_bypass = {}
 start_time = time.time()
 sec_times_all = {}
 pass_station = {}
@@ -73,13 +75,16 @@ def read_station(path, size):
     df = df.iloc[:size, :]
     miles = df['里程'].values
     station_list = df['站名'].to_list()
-    v_station_list.append('s_')
+
+    v_station_list.append(V_START)
     for sta in station_list:
         if station_list.index(sta) != 0:  # 不为首站，有到达
-            v_station_list.append('_' + sta)
+            v_station_list.append(VirtualStation(sta, 1, 1))
+            v_station_list.append(VirtualStation(sta, 1, 0))
         if station_list.index(sta) != len(station_list) - 1:
-            v_station_list.append(sta + '_')  # 不为尾站，又出发
-    v_station_list.append('_t')
+            v_station_list.append(VirtualStation(sta, 0, 1))
+            v_station_list.append(VirtualStation(sta, 0, 0))
+    v_station_list.append(V_END)
     station_name_map = {**df.set_index('站名')['站全名'].to_dict(), **df.set_index('站全名')['站名'].to_dict()}
 
 
@@ -98,15 +103,15 @@ def read_section(path):
 
 
 def parse_row_to_train(row, time_span=1080):
-    tr = Train(row['车次ID'], 0, time_span, backend=1)
+    tr = Train(row['车次'], 0, time_span, backend=1)
     tr.preferred_time = row['偏好始发时间'] - 360  # minus 6h, translate to zero time
-    tr.up = row['上下行']
+    tr.down = row['上下行']
     tr.standard = row['标杆车']
     tr.speed = row['速度']
     tr.linePlan = {k: row[k] for k in station_list}
-    if all(value == 0 for value in tr.linePlan.values()):
+    if all(value == 0 for value in tr.linePlan):
         return None
-    tr.init_traStaList(station_list)
+    tr.init_v_stations()
     tr.stop_addTime = stop_addTime[tr.speed]
     tr.start_addTime = start_addTime[tr.speed]
     tr.min_dwellTime = min_dwell_time
@@ -116,10 +121,44 @@ def parse_row_to_train(row, time_span=1080):
     return tr
 
 
-def read_train(path, size=10, time_span=1080):
-    df = pd.read_excel(path, dtype={"车次ID": int, "车次": str}, engine='openpyxl')
+def _query_circulation(r):
+    def _find(idx):
+        for tr in train_list:
+            if tr.traNo == idx:
+                return tr
+        return False
+
+    _arr = []
+    for idx in r:
+        c = _find(idx)
+        if c:
+            _arr.append(c)
+        else:
+            _arr = False
+            break
+    if _arr:
+        for tr in _arr[1:]:
+            train_bypass[tr.traNo] = True
+            _arr[0].followons.append(tr)
+
+
+def read_routes(path, up=-1):
+    if up != -1:
+        print(f"only consider {up} and thus there is no circulation")
+        return None
+    df = pd.read_excel(path)
+    df['routes'] = df['id'].apply(lambda x: x.split("-"))
+    for g in df['routes'].tolist():
+        _query_circulation(g)
+
+
+def read_train(path, size=10, time_span=1080, up=-1):
+    df = pd.read_excel(path, dtype={"车次ID": int, "车次": str}, engine='openpyxl').reset_index()
     df = df.rename(columns={k: str(k) for k in df.columns})
-    df = df.iloc[:size, :]
+    # df = df.iloc[:size, :]
+    df = df.sample(n=min(size, df.shape[0]), random_state=1)
+    if up != -1:
+        df = df[df['上下行'] == 1 - up].reset_index()
     train_series = df.apply(lambda row: parse_row_to_train(row, time_span), axis=1).dropna()
     global train_list
     train_list = train_series.to_list()
@@ -163,8 +202,8 @@ def update_yvc_multiplier(multiplier):
     for v_station, t in multiplier.keys():
         if v_station in ["s_", "_t"]:
             continue
-        station = v_station.replace("_", "")
-        if v_station.startswith("_"):
+        station = v_station.s
+        if v_station.io == 1:
             for c in ["a", "p"]:
                 interval = max(safe_int[c + c][station, 350], safe_int[c + c][station, 300])
                 if c == "a":
@@ -183,7 +222,7 @@ def update_yvc_multiplier(multiplier):
                         multiplier[v_station, t - dt]["ap"] for dt in range(1, min(interval2, t + 1)))
                 else:
                     yvc_multiplier[v_station, t][c] = 0
-        elif v_station.endswith("_"):
+        elif v_station.io == 0:
             for c in ["s", "p"]:
                 interval = max(safe_int[c + c][station, 350], safe_int[c + c][station, 300])
                 if c == "s":
@@ -205,7 +244,7 @@ def update_subgradient_dict(node_occupy_dict):
     for node, multi in multiplier.items():
         subgradient_dict[node] = {}
         for cc, mu in multi.items():
-            station = node[0].replace("_", "")
+            station = node[0].s
             interval = max(safe_int[cc][station, 350], safe_int[cc][station, 300])
             subgradient_dict[node][cc] = node_occupy_dict[node][cc[0]] \
                                          + sum(
@@ -254,7 +293,7 @@ def get_occupied_arcs_and_clique(feasible_path):
     _this_occupied_arcs = {
         (i, j): (t1, t2) for (i, t1), (j, t2) in
         zip(feasible_path[1:-2], feasible_path[2:-1])
-        if i[0] != j[1]  # if not same station
+        if i.s != j.s  # if not same station
     }
     # edges starting later yet arriving earlier
     _this_new_incompatible_arcs = {
@@ -298,7 +337,20 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp", param
     feasible_provider = 'seq'
     iter_max = 10
     best_count = count = -1
+    # new_train_order = sorted(train_list, key=lambda tr: (tr.standard, tr.opt_cost_LR), reverse=True)
     new_train_order = sorted(train_list, key=lambda tr: (tr.standard, tr.opt_cost_LR), reverse=True)
+
+    seq = {}
+    order_up, order_down = 0, 0
+
+    for tr in new_train_order:
+        if tr.down == 0:
+            seq[tr.traNo] = order_down
+            order_down += 1
+        else:
+            seq[tr.traNo] = order_up
+            order_up += 1
+    new_train_order = sorted(new_train_order, key=lambda tr: seq[tr.traNo])
 
     for j in range(iter_max):
         path_cost_feasible = 0
@@ -425,7 +477,7 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp", param
             logger.info(f"assert info: {len(jsp_not_feasible_trains) + jsp_count}")
             logger.info(f"jsp maximum cardinality: {jsp_count}")
             train_table = get_train_table(train_list, d_var, a_var)
-            direction = "up" if params_sys.up == 1 else "down"
+            direction = "up" if params_sys.down == 1 else "down"
             write_train_table(params_sys.fdir_result + f"/lr_{direction}.csv", train_table, station_name_list,
                               direction)
     elif method == "seq":
@@ -514,20 +566,14 @@ def gen_more_path(train):
 def init_multipliers(multiplier, v_station_list):
     for sta in v_station_list:  # 循环车站
         for t in range(0, time_span):  # 循环时刻t
-            if sta not in ["s_", "_t"]:
-                if sta.startswith("_"):  # arrival
+            if sta.s not in ["s", "t"]:
+                if sta.io == 1:  # arrival
                     multiplier[sta, t] = {"aa": 0, "ap": 0, "pa": 0, "pp": 0}
-                elif sta.endswith("_"):  # departure
+                elif sta.io == 0:  # departure
                     multiplier[sta, t] = {"ss": 0, "sp": 0, "ps": 0}
                 else:
                     raise TypeError(f"virtual station has the wrong name: {sta}")
     return dict(multiplier)
-
-
-def process_updata():
-    global miles_up
-    miles_up = np.array(list(reversed(miles)))
-    miles_up = - miles_up + miles_up.max()
 
 
 def create_tr_subgraph(tr):
@@ -560,10 +606,9 @@ if __name__ == '__main__':
     read_station_stop_start_addtime('raw_data/2-station-extra.xlsx')
     read_section('raw_data/3-section-time.xlsx')
     read_dwell_time('raw_data/4-dwell-time.xlsx')
-    if params_sys.up:
-        read_train('raw_data/7-lineplan-up.xlsx', train_size, time_span)
-    else:
-        read_train('raw_data/6-lineplan-down.xlsx', train_size, time_span)
+
+    read_train('raw_data/7-lineplan-all.xlsx', train_size, time_span, up=params_sys.down)
+    read_routes('raw_data/8-routes.xlsx', up=params_sys.down)
     read_intervals('raw_data/5-safe-intervals.xlsx')
 
     '''
@@ -593,7 +638,7 @@ if __name__ == '__main__':
     jsp_init = False
     path_cost_feasible = 1e6
     buffer = []
-    path_pool_manager = PathPoolManager(train_list, safe_int, params_sys.up)
+    path_pool_manager = PathPoolManager(train_list, safe_int, params_sys.down)
     while params_subgrad.gap > minGap and params_subgrad.iter < iter_max:
         time_start_iter = time.time()
         # compile adjusted multiplier for each node
@@ -632,9 +677,9 @@ if __name__ == '__main__':
             logger.info(f"maximum cardinality of feasible paths: {count}")
             logger.info(f"infeasible trains: {not_feasible_trains}")
             logger.info("primal stage finished")
-            direction = "up" if params_sys.up == 1 else "down"
+            direction = "up" if params_sys.down == 1 else "down"
             train_table = get_train_table_from_feas_path(train_list)
-            write_train_table_feas_path(params_sys.fdir_result + f"/lr_{'up' if params_sys.up else 'down'}.csv",
+            write_train_table_feas_path(params_sys.fdir_result + f"/lr_{'up' if params_sys.down else 'down'}.csv",
                                         train_table, station_name_list, direction)
 
             # update best primal solution
