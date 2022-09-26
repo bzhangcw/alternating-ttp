@@ -125,6 +125,7 @@ class Train(object):
         ###############
         # following trains
         self.followons: List[Train] = []
+        self.valid: bool = True
 
     def __hash__(self):
         return self.traNo.__hash__()
@@ -176,6 +177,64 @@ class Train(object):
 
         self.v_staList.append(V_END)
 
+    def init_merge_v_stations(self):
+        self.sta_to_traNo_set = {}
+        self.staList_company = []
+        self.vsta_to_traNo = {}
+        self.v_staList_company = []
+
+        for traNo, linePlan in self.linePlan.items():
+            all_station_list = list(linePlan)
+            if self.down[traNo] == 0:
+                all_station_list.reverse()
+            for station in all_station_list:
+                if linePlan[station] in {-1, 1}:
+                    depSta = station
+                    break
+            for station in all_station_list[::-1]:
+                if linePlan[station] in {-1, 1}:
+                    arrSta = station
+                    break
+
+            in_rail_flag = 0
+            for station in all_station_list:
+                if station == depSta:
+                    in_rail_flag = 1
+
+                if in_rail_flag == 1:
+                    if len(self.staList) == 0 or station != self.staList[-1]:
+                        self.staList.append(station)
+                        self.staList_company.append(traNo)
+                        self.sta_to_traNo_set.setdefault(station, set())
+                    self.sta_to_traNo_set[station].add(traNo)
+
+                if station == arrSta:
+                    in_rail_flag = 0
+
+        self.v_staList.append(V_START)
+        self.v_staList_company.append('-1')
+        for i, (traNo, station) in enumerate(zip(self.staList_company, self.staList)):
+            if i != 0:
+                _vs = VirtualStation(station, 1, self.down[traNo])
+                self.v_staList.append(_vs)
+                self.v_staList_company.append(traNo)
+                self.v_sta_type.setdefault(traNo, dict())
+                self.v_sta_type[traNo][_vs] = "p" if self.linePlan[traNo][station] in (0, -1) else "a"
+                self.vsta_to_traNo.setdefault(_vs, set())
+                self.vsta_to_traNo[_vs].add(traNo)
+            if i != len(self.staList) - 1:  # if not last, has an io=0 virtual station
+                _vs = VirtualStation(station, 0, self.down[traNo])
+                self.v_staList.append(_vs)
+                self.v_staList_company.append(traNo)
+                self.v_sta_type.setdefault(traNo, dict())
+                self.v_sta_type[traNo][_vs] = "p" if self.linePlan[traNo][station] in (0, -1) else "s"
+                self.vsta_to_traNo.setdefault(_vs, set())
+                self.vsta_to_traNo[_vs].add(traNo)
+        self.v_staList.append(V_END)
+        self.v_staList_company.append('-1')
+
+        assert len(self.v_staList) == 2 * len(self.staList)
+
     def _subgraph_copy(self):
         return copy.deepcopy(self.subgraph)
 
@@ -183,12 +242,14 @@ class Train(object):
         right_bound_by_sink = []  # 从总天窗时间右端反推至该站的右侧边界，按运行最快了算
         accum_time = 0
         right_bound_by_sink.append(TimeSpan - accum_time)  # 最后一站的到达
-        for sta_id in range(len(self.staList) - 1, 0, -1):
-            accum_time += self.secTimes[self.staList[sta_id - 1], self.staList[sta_id]]
+        for sta_index in range(len(self.staList) - 1, 0, -1):
+            traNo = self.staList_company[sta_index]
+            speed = self.speed[traNo]
+            accum_time += self.secTimes[speed][self.staList[sta_index - 1], self.staList[sta_index]]
             right_bound_by_sink.append(TimeSpan - accum_time)
-            if sta_id != 1:  # 最后一站不用加上停站时分了
-                if self.linePlan[self.staList[sta_id - 1]] == 1:  # 若停站了则加一个2
-                    accum_time += self.min_dwellTime[self.staList[sta_id - 1]]
+            if sta_index != 1:  # 最后一站不用加上停站时分了
+                if self.linePlan[traNo][self.staList[sta_index - 1]] == 1:  # 若停站了则加一个2
+                    accum_time += self.min_dwellTime[traNo][self.staList[sta_index - 1]]
                 else:
                     accum_time += 0
                 right_bound_by_sink.append(TimeSpan - accum_time)
@@ -198,28 +259,39 @@ class Train(object):
         right_bound_by_dep = []
         right_bound_by_dep.append(self.dep_UB)  # 第一个站
         accum_time = self.dep_UB
-        for sta_id in range(0, len(self.staList) - 1):  # 最后一个站不考虑
-            accum_time += self.secTimes[self.staList[sta_id], self.staList[sta_id + 1]]
+        for sta_index in range(0, len(self.staList) - 1):  # 最后一个站不考虑
+            traNo = self.staList_company[sta_index]
+            speed = self.speed[traNo]
+            accum_time += self.secTimes[speed][self.staList[sta_index], self.staList[sta_index + 1]]
             right_bound_by_dep.append(accum_time)
-            if sta_id != len(self.staList) - 2:  # 最后一个区间，不加停站时分
-                accum_time += self.min_dwellTime[self.staList[sta_id]]
+            if sta_index != len(self.staList) - 2:  # 最后一个区间，不加停站时分
+                accum_time += self.min_dwellTime[traNo][self.staList[sta_index]]
                 right_bound_by_dep.append(accum_time)
 
-        for sta in self.v_staList:
+        for traNo, sta in zip(self.v_staList_company, self.v_staList):
             if sta == self.v_staList[-1] or sta == self.v_staList[0]:
                 continue
             right_bound_dep = right_bound_by_dep[self.v_staList.index(sta) - 1]
             right_bound_sink = right_bound_by_sink[self.v_staList.index(sta) - 1]
             # self.right_time_bound[sta] = min(right_bound_dep, right_bound_sink)
-            self.right_time_bound[sta] = right_bound_sink
+            self.right_time_bound.setdefault(traNo, {})
+            self.right_time_bound[traNo][sta] = right_bound_sink
 
-        assert all([bound >= 0 for bound in self.right_time_bound.values()])
+        return all([bound >= 0 for traNo_bound in self.right_time_bound.values() for bound in traNo_bound.values()])
 
     def create_subgraph(self, secTimes, TimeSpan, fix_preferred_time):
         if self.backend == 0:
             self.create_subgraph_nx(secTimes, TimeSpan, fix_preferred_time)
         elif self.backend == 1:
             self.create_subgraph_ig(secTimes, TimeSpan, fix_preferred_time)
+        else:
+            raise ValueError(f"backend {self.backend} is not supported")
+
+    def create_merge_subgraph(self, secTimes, TimeSpan, fix_preferred_time):
+        if self.backend == 0:
+            self.create_subgraph_nx(secTimes, TimeSpan, fix_preferred_time)
+        elif self.backend == 1:
+            self.create_merge_subgraph_ig(secTimes, TimeSpan, fix_preferred_time)
         else:
             raise ValueError(f"backend {self.backend} is not supported")
 
@@ -230,7 +302,7 @@ class Train(object):
         if self.backend == 0:
             self.update_arc_multiplier_nx(option, gamma)
         elif self.backend == 1:
-            self.update_arc_multiplier_ig(option, gamma)
+            self.update_merge_arc_multiplier_ig(option, gamma)
         else:
             raise ValueError(f"backend {self.backend} is not supported")
 
@@ -460,12 +532,12 @@ class Train(object):
     #################
     # iGraph
     #################
-    def _ig_add_vertex_pair(self, _s, _t):
+    def _ig_add_vertex_pair(self, _s, _t, traNo):
         """
         add vertex pair (an edge) to igraph backend.
         """
         if _t[0] not in [V_START, V_END]:
-            xa_map[_s, _t][self.traNo][self.v_sta_type[_t[0]]] += 1
+            xa_map[_s, _t][traNo][self.v_sta_type[traNo][_t[0]]] += 1
         if self.backend == 0:
             return -1
         self._ig_nodes.add(_s)
@@ -517,6 +589,8 @@ class Train(object):
         create arcs between real stations
         '''
         for i in range(len(self.staList) - 1):
+            traNo = self.staList_company[i]
+
             curSta = self.staList[i]
             nextSta = self.staList[i + 1]
             # virtual dual stations
@@ -528,9 +602,9 @@ class Train(object):
 
             # 创建两个弧, 一个运行弧，一个停站弧
 
-            if self.linePlan[curSta] == 1:  # 本站停车，加起车附加时分
+            if self.linePlan[traNo][curSta] == 1:  # 本站停车，加起车附加时分
                 secRunTime += self.start_addTime[curSta]
-            if self.linePlan[nextSta] == 1:  # 下站停车，加停车附加时分
+            if self.linePlan[traNo][nextSta] == 1:  # 下站停车，加停车附加时分
                 secRunTime += self.stop_addTime[nextSta]  # 添加停车附加时分
             # 设置d-a的区间运行弧
             for t in range(minArr, self.right_time_bound[curSta_dep]):
@@ -548,7 +622,7 @@ class Train(object):
             if i + 1 == len(self.staList) - 1:  # 若停站, 但已经是最后一个站了，不需停站弧
                 break
 
-            if self.linePlan[nextSta] == 1:  # 该站停车，创建多个停站时间长度的停站弧
+            if self.linePlan[traNo][nextSta] == 1:  # 该站停车，创建多个停站时间长度的停站弧
                 for t in range(minArr, self.right_time_bound[nextSta_arr]):
                     if t + self.min_dwellTime[nextSta] >= self.right_time_bound[nextSta_dep]:  # 当前t加上最短停站时分都超了，break掉
                         break
@@ -582,6 +656,126 @@ class Train(object):
         self._ig_t = self.subgraph.vcount() - 1
         self.max_edge_weight = np.max(self.subgraph.es['weight'])
 
+    def create_merge_subgraph_ig(self, secTimes, TimeSpan, fix_preferred_time):
+        """
+        create the subgraph for this train
+            use the created nodelist
+            you should not initialize any new nodes.
+        """
+        self.depSta = self.staList[0]
+        self.arrSta = self.staList[-1]
+        self.secTimes = secTimes
+        self.node_to_traNo_map = {}
+        if not self.truncate_train_time_bound(TimeSpan):
+            self.valid = False
+            return
+
+        minArr = self.dep_LB  # for curSta(judge by dep)
+
+        first_traNo = self.v_staList_company[1]  # FIXME: all preferred time instead of the first train
+        if fix_preferred_time and not np.isnan(self.preferred_time[first_traNo]):
+            interval = 10
+            assert minArr <= self.preferred_time[first_traNo] < self.right_time_bound[first_traNo][self.v_staList[1]]
+            lb = max(int(self.preferred_time[first_traNo]) - interval, minArr)
+            ub = min(int(self.preferred_time[first_traNo]) + interval + 1, self.right_time_bound[first_traNo][self.v_staList[1]])
+        else:
+            lb = minArr
+            ub = self.right_time_bound[first_traNo][self.v_staList[1]]
+        for t in range(lb, ub):
+            _vs = VirtualStation(self.staList[0], io=0, down=self.down[first_traNo])
+            _s, _t = (V_START, -1), (_vs, t)
+            self._ig_add_vertex_pair(_s, _t, first_traNo)
+            # assert _t not in self.node_to_traNo_map
+            self.node_to_traNo_map[_s] = first_traNo  # FIXME: one space-time node multiple trains pass through?
+            self.node_to_traNo_map[_t] = first_traNo
+
+        '''
+        create arcs between real stations
+        '''
+        for i in range(len(self.staList) - 1):
+            traNo = self.staList_company[i]
+
+            curSta = self.staList[i]
+            nextSta = self.staList[i + 1]
+            # virtual dual stations
+            curSta_dep = VirtualStation(curSta, 0, self.down[traNo])  # curSta + "_"
+            nextSta_arr = VirtualStation(nextSta, 1, self.down[traNo])  # "_" + nextSta
+            nextSta_dep = VirtualStation(nextSta, 0, self.down[traNo])  # nextSta + "_"
+
+            secRunTime = secTimes[self.speed[traNo]][curSta, nextSta]  # 区间运行时分
+
+            # 创建两个弧, 一个运行弧，一个停站弧
+
+            if self.linePlan[traNo][curSta] == 1:  # 本站停车，加起车附加时分
+                secRunTime += self.start_addTime[traNo][curSta]
+            if self.linePlan[traNo][nextSta] == 1:  # 下站停车，加停车附加时分
+                secRunTime += self.stop_addTime[traNo][nextSta]  # 添加停车附加时分
+            # 设置d-a的区间运行弧
+            for t in range(minArr, self.right_time_bound[traNo][curSta_dep]):
+                if t + secRunTime >= self.right_time_bound[traNo][nextSta_arr]:  # 范围为0 => TimeSpan - 1
+                    break
+                _s, _t = (curSta_dep, t), (nextSta_arr, t + secRunTime)
+                self._ig_add_vertex_pair(_s, _t, traNo)
+                # assert _t not in self.node_to_traNo_map
+                self.node_to_traNo_map[_s] = traNo
+                self.node_to_traNo_map[_t] = traNo
+
+            # update cur time window
+            minArr += secRunTime
+
+            '''
+            nextSta_arr-->nextSta_dep车站停站弧
+            '''
+            if i + 1 == len(self.staList) - 1:  # 若停站, 但已经是最后一个站了，不需停站弧
+                break
+
+            if self.linePlan[traNo][nextSta] == 1:  # 该站停车，创建多个停站时间长度的停站弧
+                for t in range(minArr, self.right_time_bound[traNo][nextSta_arr]):
+                    if t + self.min_dwellTime[traNo][nextSta] >= self.right_time_bound[traNo][nextSta_dep]:  # 当前t加上最短停站时分都超了，break掉
+                        break
+                    my_range = range(self.min_dwellTime[traNo][nextSta], self.max_dwellTime[traNo][nextSta] + 1)
+                    for span in my_range:
+                        if t + span >= self.right_time_bound[traNo][nextSta_dep]:
+                            break
+                        # igraph backend
+                        _s, _t = (nextSta_arr, t), (nextSta_dep, t + span)
+                        self._ig_add_vertex_pair(_s, _t, traNo)
+                        self.node_to_traNo_map[_s] = traNo
+                        self.node_to_traNo_map[_t] = traNo
+            else:  # 该站不停车，只创建一个竖直弧，长度为0
+                for t in range(minArr, self.right_time_bound[traNo][nextSta_arr]):
+                    # igraph backend
+                    _s, _t = (nextSta_arr, t), (nextSta_dep, t)
+                    self._ig_add_vertex_pair(_s, _t, traNo)
+                    self.node_to_traNo_map[_s] = traNo
+                    self.node_to_traNo_map[_t] = traNo
+            # update cur time window
+            minArr += self.min_dwellTime[traNo][nextSta]
+
+        '''
+        create arcs involving node t
+        '''
+
+        last_traNo = self.v_staList_company[-2]
+        for t in range(minArr, self.right_time_bound[last_traNo][self.v_staList[-2]]):
+            v_finale = self.v_staList[-2]  # '_' + self.staList[-1]
+            # igraph backend
+            _s, _t = (v_finale, t), (V_END, -1)  # ('_t', -1)
+            self._ig_add_vertex_pair(_s, _t, last_traNo)
+            self.node_to_traNo_map[_s] = last_traNo
+            self.node_to_traNo_map[_t] = last_traNo
+
+        self._init_subgraph_ig()
+        self._ig_s = 0
+        self._ig_t = self.subgraph.vcount() - 1
+        self.max_edge_weight = np.max(self.subgraph.es['weight'])
+
+        try:
+            self.shortest_path()
+            print("success")
+        except Exception as e:
+            print(e)
+
     def update_arc_multiplier_ig(self, option="lagrange", gamma=0):
         """
         rebuild current price/multiplier to cal shortest path
@@ -598,6 +792,30 @@ class Train(object):
             elif option == "pdhg":
                 e["multiplier"] = xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][
                     self.v_sta_type[j[0]]] + gamma * (0.5 - ((i, j) in self.opt_path_LR_dict)) if j[0] not in v_null else 0
+            else:
+                raise ValueError(f"option {option} is not supported")
+            p = w + e["multiplier"]
+            # attr updates.
+            e['price'] = p
+
+    def update_merge_arc_multiplier_ig(self, option="lagrange", gamma=0):
+        """
+        rebuild current price/multiplier to cal shortest path
+        """
+        self.opt_path_LR_dict = {node: None for node in self.opt_path_LR}
+        subg = self.subgraph
+        v_null = {V_START, V_END}
+        for e in subg.es:
+            i, j = e['name']
+            w = e['weight']
+
+            traNo = self.node_to_traNo_map[i]
+            if option == "lagrange":
+                e["multiplier"] = xa_map[i, j][traNo][self.v_sta_type[traNo][j[0]]] * yvc_multiplier[j][
+                    self.v_sta_type[traNo][j[0]]] if j[0] not in v_null else 0
+            elif option == "pdhg":
+                e["multiplier"] = xa_map[i, j][traNo][self.v_sta_type[traNo][j[0]]] * yvc_multiplier[j][
+                    self.v_sta_type[traNo][j[0]]] + gamma * (0.5 - ((i, j) in self.opt_path_LR_dict)) if j[0] not in v_null else 0
             else:
                 raise ValueError(f"option {option} is not supported")
             p = w + e["multiplier"]

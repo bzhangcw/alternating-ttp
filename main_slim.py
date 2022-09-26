@@ -5,6 +5,7 @@ from typing import *
 
 import pandas as pd
 from joblib import Parallel, delayed, parallel_backend
+from tqdm import tqdm
 
 import util_output as uo
 from PathPoolMananger import PathPoolManager
@@ -121,6 +122,82 @@ def parse_row_to_train(row, time_span=1080):
     return tr
 
 
+def check_valid_staList(new_tr):
+    station_list = list(map(int, new_tr.staList))
+    for sta_1, sta_2 in zip(station_list[1:], station_list[:-1]):
+        if abs(sta_1 - sta_2) > 1:
+            return False
+
+    v_station_list = new_tr.v_staList
+    for v_sta_1, v_sta_2 in zip(v_station_list[2:-1], v_station_list[1:-2]):
+        if v_sta_1.io + v_sta_2.io != 1 or int(v_sta_1.s) - int(v_sta_2.s) > 1:
+            return False
+    return True
+
+
+def merge_train(train_list):
+    merge_train_list = []
+    merge_train_dict = {}
+    invalid_trns = []
+    for tr in sorted(train_list, key=lambda tr: len(tr.followons), reverse=True):
+        if tr.traNo not in merge_train_dict:
+            new_tr = Train(tr.traNo + "".join(["-" + trr.traNo for trr in tr.followons]), 0, tr.dep_UB, backend=1)
+            new_tr.preferred_time = {trr.traNo: trr.preferred_time for trr in [tr] + tr.followons}
+            new_tr.down = {trr.traNo: trr.down for trr in [tr] + tr.followons}
+            new_tr.standard = {trr.traNo: trr.standard for trr in [tr] + tr.followons}
+            new_tr.speed = {trr.traNo: trr.speed for trr in [tr] + tr.followons}
+            new_tr.linePlan = {trr.traNo: trr.linePlan for trr in [tr] + tr.followons}
+
+            new_tr.stop_addTime = {trr.traNo: trr.stop_addTime for trr in [tr] + tr.followons}
+            new_tr.start_addTime = {trr.traNo: trr.start_addTime for trr in [tr] + tr.followons}
+            new_tr.min_dwellTime = {trr.traNo: trr.min_dwellTime for trr in [tr] + tr.followons}
+            new_tr.max_dwellTime = {trr.traNo: trr.max_dwellTime for trr in [tr] + tr.followons}
+            new_tr.pass_station = {trr.traNo: trr.pass_station for trr in [tr] + tr.followons}
+
+            new_tr.order = [tr.traNo] + [trr.traNo for trr in tr.followons]
+            new_tr.traNo_to_idx = {traNo: idx for idx, traNo in enumerate(new_tr.order)}  # sorted dicty
+
+            new_tr.init_merge_v_stations()
+
+            if not check_valid_staList(new_tr):
+                trs = [tr] + tr.followons
+                tr.followons = []
+                invalid_trns.extend(trs)
+                continue
+                # merge_train_list
+                # for trr in trs:
+                #     merge_train_dict[trr.traNo] = trr
+                #     trr.init_merge_v_stations()
+
+            merge_train_list.append(new_tr)
+            for trr in [tr] + tr.followons:
+                merge_train_dict[trr.traNo] = new_tr
+
+    for tr in invalid_trns:
+        if tr.traNo not in merge_train_dict:
+            new_tr = Train(tr.traNo + "".join(["-" + trr.traNo for trr in tr.followons]), 0, tr.dep_UB, backend=1)
+            new_tr.preferred_time = {trr.traNo: trr.preferred_time for trr in [tr] + tr.followons}
+            new_tr.down = {trr.traNo: trr.down for trr in [tr] + tr.followons}
+            new_tr.standard = {trr.traNo: trr.standard for trr in [tr] + tr.followons}
+            new_tr.speed = {trr.traNo: trr.speed for trr in [tr] + tr.followons}
+            new_tr.linePlan = {trr.traNo: trr.linePlan for trr in [tr] + tr.followons}
+
+            new_tr.stop_addTime = {trr.traNo: trr.stop_addTime for trr in [tr] + tr.followons}
+            new_tr.start_addTime = {trr.traNo: trr.start_addTime for trr in [tr] + tr.followons}
+            new_tr.min_dwellTime = {trr.traNo: trr.min_dwellTime for trr in [tr] + tr.followons}
+            new_tr.max_dwellTime = {trr.traNo: trr.max_dwellTime for trr in [tr] + tr.followons}
+            new_tr.pass_station = {trr.traNo: trr.pass_station for trr in [tr] + tr.followons}
+
+            new_tr.order = [tr.traNo] + [trr.traNo for trr in tr.followons]
+            new_tr.traNo_to_idx = {traNo: idx for idx, traNo in enumerate(new_tr.order)}  # sorted dicty
+
+            new_tr.init_merge_v_stations()
+
+            assert check_valid_staList(new_tr)
+
+    return merge_train_list
+
+
 def _query_circulation(r):
     def _find(idx):
         for tr in train_list:
@@ -143,11 +220,12 @@ def _query_circulation(r):
 
 
 def read_routes(path, up=-1):
+    drop_routes = ['32-5', '18-19', '30-63', '46-359', '70-89', '112-77']
     if up != -1:
         print(f"only consider {up} and thus there is no circulation")
         return None
     df = pd.read_excel(path)
-    df['routes'] = df['id'].apply(lambda x: x.split("-"))
+    df['routes'] = df['id'].apply(lambda x: x.split("-") if all(drp_rt not in x for drp_rt in drop_routes) else [])
     for g in df['routes'].tolist():
         _query_circulation(g)
 
@@ -581,6 +659,11 @@ def create_tr_subgraph(tr):
     return tr
 
 
+def create_merge_tr_subgraph(tr):
+    tr.create_merge_subgraph(sec_times_all, time_span, params_sys.fix_preferred_time)
+    return tr
+
+
 if __name__ == '__main__':
 
     params_sys = SysParams()
@@ -618,10 +701,39 @@ if __name__ == '__main__':
     multiplier = init_multipliers(multiplier, v_station_list)
     logger.info(f"maximum estimate of active nodes {gc.vc}")
 
-    with parallel_backend("loky", n_jobs=1):
-        start_time = time.time()
-        train_list = Parallel()(delayed(create_tr_subgraph)(tr) for tr in train_list)
+    train_dict = {tr.traNo: tr for tr in train_list}
+    logger.info(f"original train size {len(train_list)}")
+    train_list = merge_train(train_list)
+    logger.info(f"primarily merged train size {len(train_list)}")
+
+    start_time = time.time()
+    new_train_list = []
+    for tr in tqdm(train_list):
+        new_train = create_merge_tr_subgraph(tr)
+        if new_train.valid:
+            new_train_list.append(new_train)
+        else:
+            # invalid route
+            logger.warning(new_train, " cannot route!")
+
+            old_trains = []
+            for traNo in new_train.traNo.split("-"):
+                tr = train_dict[traNo]
+                tr.followons = []
+                old_trains.append(tr)
+
+            new_trains = merge_train(old_trains)
+            assert len(new_trains) == len(old_trains)
+            for tr in new_trains:
+                new_train = create_merge_tr_subgraph(tr)
+                assert new_train.valid
+                new_train_list.append(new_train)
+
+    train_list = new_train_list
+    logger.info(f"final merged train size: {len(train_list)}")
+    # train_list = [create_merge_tr_subgraph(tr) for tr in train_list]
     logger.info(f"parallel graph creation time: {time.time() - start_time:.2f}s")
+
 
     logger.info(f"step 2: graph building finish")
     logger.info(f"actual train size {len(train_list)}")
