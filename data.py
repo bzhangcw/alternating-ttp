@@ -10,7 +10,7 @@ from typing import *
 
 import pandas as pd
 
-from Train import *
+from train import *
 
 logFormatter = logging.Formatter("%(asctime)s: %(message)s")
 logger = logging.getLogger("railway")
@@ -97,15 +97,15 @@ def read_section(path):
 
 
 def parse_row_to_train(row, time_span=1080):
-    tr = Train(row['车次'], 0, time_span, backend=1)
-    tr.preferred_time = row['偏好始发时间'] - 360  # minus 6h, translate to zero time
-    tr.down = row['上下行']
+    tr = Train(row['车次ID'], 0, time_span, backend=1)
+    tr.preferred_time = row['偏好始发时间']
+    tr.up = row['上下行']
     tr.standard = row['标杆车']
     tr.speed = row['速度']
     tr.linePlan = {k: row[k] for k in station_list}
-    if all(value == 0 for value in tr.linePlan):
+    if all(value == 0 for value in tr.linePlan.values()):
         return None
-    tr.init_v_stations()
+    tr.init_traStaList(station_list)
     tr.stop_addTime = stop_addTime[tr.speed]
     tr.start_addTime = start_addTime[tr.speed]
     tr.min_dwellTime = min_dwell_time
@@ -199,7 +199,7 @@ def setup(params_sys: SysParams):
     read_station_stop_start_addtime('raw_data/2-station-extra.xlsx')
     read_section('raw_data/3-section-time.xlsx')
     read_dwell_time('raw_data/4-dwell-time.xlsx')
-    if not params_sys.down:
+    if params_sys.up:
         read_train('raw_data/7-lineplan-up.xlsx', params_sys.train_size, params_sys.time_span)
     else:
         read_train('raw_data/6-lineplan-down.xlsx', params_sys.train_size, params_sys.time_span)
@@ -207,7 +207,7 @@ def setup(params_sys: SysParams):
     logger.info("reading finish")
 
     for tr in train_list:
-        tr.create_subgraph(sec_times_all[tr.speed], params_sys.time_span, fix_preferred_time=False)
+        tr.create_subgraph(sec_times_all[tr.speed], params_sys.time_span)
     logger.info("graph initialization finish")
 
     return params_sys

@@ -25,7 +25,7 @@ from gurobipy import *
 import data as ms
 import util_output as uo
 import util_solver as su
-from Train import *
+from train import *
 
 
 # BCD params

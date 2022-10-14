@@ -3,8 +3,8 @@ create a railway ttp instance by gurobi
     also save to matlab & mps.
 """
 from scipy.io import savemat
+
 from functional_model_builder import *
-from functional_bcd import *
 
 if __name__ == '__main__':
     params_sys = SysParams()

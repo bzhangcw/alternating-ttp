@@ -1,11 +1,16 @@
 """
-utility modules
+utility modules, include utility for subgradient method.
 """
+import datetime
 import logging
+import os
+import sys
 from collections import defaultdict
 from itertools import combinations
-import pandas as pd
-import math
+
+from gurobipy import GRB
+
+from util_solver import getConstrByPrefix
 
 ##############################
 # DEFAULTS
@@ -23,6 +28,7 @@ node_prec_map = defaultdict(list)
 # original Lagrangian
 # multiplier = defaultdict(lambda: {"aa": 0, "ap": 0, "ss": 0, "sp": 0, "pa": 0, "ps": 0, "pp": 0})  # each (station, t)
 multiplier = dict()  # each (station, t)
+z_vars = dict()
 # node multiplier
 yv_multiplier = {}  # the multiplier of each v
 yvc_multiplier = defaultdict(lambda: {"a": 0, "s": 0, "p": 0})  # the multiplier of each v with type c
@@ -31,8 +37,19 @@ safe_int = {}
 category = ["s", "a", "p"]
 safe_int_df = None
 
+##############################
+# LOGGER
+##############################
 _grb_logger = logging.getLogger("gurobipy.gurobipy")
 _grb_logger.setLevel(logging.ERROR)
+
+logFormatter = logging.Formatter("%(asctime)s: %(message)s")
+logger = logging.getLogger("railway")
+logger.setLevel(logging.INFO)
+
+# consoleHandler = logging.StreamHandler(sys.stdout)
+# consoleHandler.setFormatter(logFormatter)
+# logger.addHandler(consoleHandler)
 
 
 # global graph generation id.
@@ -49,25 +66,6 @@ class GraphCounter(object):
 gc = GraphCounter()
 
 
-def num2time(num):
-    """
-    input:  num is a floating point number in minutes
-
-    output: t is time string
-            t's format is 'hour:min:sec'
-    """
-    num_dec, num_int = math.modf(num)
-    s = round(num_dec * 60)  # second
-    if s >= 60:
-        num_int = num_int + 1
-        s = 0
-    num_int = int(num_int)
-    h = num_int // 60  # hour
-    m = math.floor(num_int - h * 60)  # min
-    t = "{0:d}:{1:02d}:{2:02d}".format(h, m, s)  # time string
-    return t
-
-
 class SysParams(object):
     # todo, support ArgumentParser
     DBG = False
@@ -75,17 +73,30 @@ class SysParams(object):
     train_size = 0
     time_span = 0
     iter_max = 0
-    down = 0
-    fix_preferred_time = True
+    up = 0
+
+    def __init__(self):
+        subdir_result = self.subdir_result = datetime.datetime.now().strftime('%y%m%d-%H%M')
+        fdir_result = self.fdir_result = f"result/{subdir_result}"
+        os.makedirs(fdir_result, exist_ok=True)
+        fileHandler = logging.FileHandler("{0}/{1}.log".format(fdir_result, "out"))
+        fileHandler.setFormatter(logFormatter)
+        logger.addHandler(fileHandler)
+
 
     def parse_environ(self):
         import os
         self.station_size = int(os.environ.get('station_size', 29))
-        self.train_size = int(os.environ.get('train_size', 10))
+        self.train_size = int(os.environ.get('train_size', 292))
         self.time_span = int(os.environ.get('time_span', 1080))
         self.iter_max = int(os.environ.get('iter_max', 100))
-        self.down = int(os.environ.get('down', -1))
-        self.fix_preferred_time = int(os.environ.get('fix_preferred_time', True))
+        self.up = int(os.environ.get('up', 0))
+        self.log_problem_size(logger)
+
+    def log_problem_size(self, logger):
+        logger.info(
+            f"size: #train,#station,#timespan,#iter_max: {self.train_size, self.station_size, self.time_span, self.iter_max}"
+        )
 
 
 # subgradient params
@@ -94,24 +105,27 @@ class SubgradParam(object):
     def __init__(self):
         self.kappa = 0.2
         self.alpha = 1.0
+        self.beta = 1
         self.gamma = 0.1  # parameter for argmin x
         self.changed = 0
         self.num_stuck = 0
         self.eps_num_stuck = 3
         self.iter = 0
         self.lb = 1e-6
-        self.lb_arr = [-1e6]
-        self.ub_arr = [1e6]
+        self.lb_arr = []
+        self.ub_arr = []
         self.gap = 1
         self.dual_method = "pdhg"  # "lagrange" or "pdhg"
-        self.primal_heuristic_method = "jsp"  # "jsp" or "seq"
-        self.feasible_provider = "jsp"  # "jsp" or "seq"
+        self.primal_heuristic_method = "seq"  # "jsp" or "seq"
+        self.feasible_provider = "seq"  # "jsp" or "seq"
         self.max_number = 1
+        self.norms = ([], [], [])
+        self.multipliers = ([], [], [])
 
     def parse_environ(self):
         import os
         self.primal_heuristic_method = os.environ.get('primal', 'seq')
-        self.dual_method = os.environ.get('dual', 'pdhg')
+        self.dual_method = os.environ.get('dual', 'pdhg_alm')
 
     def update_bound(self, lb):
         if lb >= self.lb:
@@ -134,6 +148,22 @@ class SubgradParam(object):
         _best_ub = min(self.ub_arr)
         _best_lb = max(self.lb_arr)
         self.gap = (_best_ub - _best_lb) / (abs(_best_lb) + 1e-3)
+
+    def reset(self):
+        self.num_stuck = 0
+        self.eps_num_stuck = 3
+        self.iter = 0
+        self.lb = 1e-6
+        self.lb_arr = []
+        self.ub_arr = []
+        self.gap = 1
+        self.dual_method = "pdhg"  # "lagrange" or "pdhg"
+        self.primal_heuristic_method = "jsp"  # "jsp" or "seq"
+        self.feasible_provider = "jsp"  # "jsp" or "seq"
+        self.max_number = 1
+        self.norms = ([], [], [])  # l1-norm, l2-norm, infty-norm
+        self.multipliers = ([], [], [])
+        self.parse_environ()
 
 
 def from_train_path_to_train_order(train_list, method="dual"):
@@ -236,8 +266,6 @@ def fix_train_at_station(model, x_var, feasible_train_list):
 
 
 def IIS_resolve(model, iter_max=5):
-    from constr_verification import getConstrByPrefix
-    from gurobipy import GRB
     headway_fix_constrs = getConstrByPrefix(model, "headway_fix")
     iter = 0
     while iter < iter_max and model.status == GRB.INFEASIBLE:
@@ -286,50 +314,3 @@ def LR_path_overtaking(train_1, train_2, method="dual"):
                 return True
 
     return False
-
-
-def get_train_table_from_feas_path(train_list):
-    train_table = {}
-    for train in train_list:
-        train_id = train.traNo
-        train_table[train_id] = {}
-        for i, (v_station, t) in enumerate(train.feasible_path[1:-1]):
-            station = v_station.s
-            run_type = 'dep' if v_station.io == 0 else 'arr'
-
-            train_table[train_id].setdefault(station, {})
-            if i == 0 or i == len(train.feasible_path) - 3:
-                train_table[train_id][station]['dep'] = train_table[train_id][station]['arr'] = round(t, 2)
-            else:
-                train_table[train_id][station][run_type] = round(t, 2)
-
-        for station, times in train_table[train_id].items():
-            assert len(times) == 2
-    return train_table
-
-
-def write_train_table_feas_path(path, train_table, station_name_list, direction='up', sort=True, encoding='utf-8-sig'):
-    """
-    列: 车次ID, 车次, 站序, 站名, 到点, 发点
-    """
-    df = pd.DataFrame(columns=['车次ID', '车次', '站序', '站名', '到点', '发点'])
-
-    train_list = list(train_table.keys())
-    if sort:
-        train_list.sort(key=lambda tr: int(tr), reverse=False)
-
-    rows = []
-    for train_id in train_list:
-        k = 0
-        train_route = train_table[train_id]
-        for station, times in train_route.items():
-            row = {'车次ID': train_id,
-                   '车次': train_id,
-                   '站序': k,
-                   '站名': station_name_list[int(station) - 1],
-                   '到点': num2time(times['arr']),
-                   '发点': num2time(times['dep'])}
-            rows.append(pd.Series(row))
-            k = k + 1
-    df = pd.DataFrame(rows)
-    df.to_csv(path, encoding=encoding, index=False)

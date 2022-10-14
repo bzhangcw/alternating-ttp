@@ -12,7 +12,7 @@ from gurobipy import *
 import data as ms
 import util_output as uo
 import util_solver as su
-from Train import *
+from train import *
 
 _logger = logging.getLogger("model-builder")
 _logger.setLevel(logging.DEBUG)
