@@ -116,6 +116,8 @@ def show_log_header():
     print(("{:^" + f"{lt}" + "}").format("(c) Chuwen Zhang, Shanwen Pu, Rui Wang"))
     print(("{:^" + f"{lt}" + "}").format("2022"))
     print("*" * lt)
+    print(_log_header)
+    print("*" * lt)
 
 
 def optimize(bcdpar: BCDParams, mat_dict: Dict):
