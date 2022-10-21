@@ -10,7 +10,7 @@ from typing import *
 
 import pandas as pd
 
-from train import *
+from Train import *
 
 logFormatter = logging.Formatter("%(asctime)s: %(message)s")
 logger = logging.getLogger("railway")

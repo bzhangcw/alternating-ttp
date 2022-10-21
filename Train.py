@@ -248,6 +248,9 @@ class Train(object):
             edge_attrs={"weight": _weight, "name": _name},
             vertex_attrs={"name": self._ig_nodes}
         )
+        # add station and time for query
+        for vv in self.subgraph.vs:
+            vv['station'], vv['time'] = vv['name']
 
     def create_subgraph_ig(self, secTimes, TimeSpan):
         """

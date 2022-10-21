@@ -25,7 +25,7 @@ from gurobipy import *
 import data as ms
 import util_output as uo
 import util_solver as su
-from train import *
+from Train import *
 
 
 # BCD params
@@ -106,6 +106,18 @@ def _nonnegative(x):
     return max(x, 0)
 
 
+def show_log_header():
+    headers = ["k", "t", "c'x", "lobj", "|Ax - b|", "error", "rho", "tau", "iter"]
+    slots = ["{:^3s}", "{:^7s}", "{:^9s}", "{:^9s}", "{:^10s}", "{:^10s}", "{:^9s}", "{:^9s}", "{:4s}"]
+    _log_header = " ".join(slots).format(*headers)
+    lt = _log_header.__len__()
+    print("*" * lt)
+    print(("{:^" + f"{lt}" + "}").format("BCD for MILP"))
+    print(("{:^" + f"{lt}" + "}").format("(c) Chuwen Zhang, Shanwen Pu, Rui Wang"))
+    print(("{:^" + f"{lt}" + "}").format("2022"))
+    print("*" * lt)
+
+
 def optimize(bcdpar: BCDParams, mat_dict: Dict):
     """
 
@@ -122,7 +134,7 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
     b = mat_dict['b']
     m, _ = b.shape
     A = scipy.sparse.hstack([blk['A'] for idx, blk in enumerate(blocks)])
-    Anorm = 20 # scipy.sparse.linalg.norm(A) / 10
+    Anorm = 20  # scipy.sparse.linalg.norm(A) / 10
 
     # alias
     rho = 1e-2
@@ -131,10 +143,9 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
     xk = [np.ones((blk['n'], 1)) for idx, blk in enumerate(blocks)]
     lbd = rho * np.ones(b.shape)
     # logger
-    headers = ["k", "t", "c'x", "lobj", "|Ax - b|", "error", "rho", "tau", "iter"]
-    slots = ["{:^3s}", "{:^7s}", "{:^9s}", "{:^9s}", "{:^10s}", "{:^10s}", "{:^9s}", "{:^9s}", "{:4s}"]
-    _log_header = " ".join(slots).format(*headers)
-    print(_log_header)
+
+    show_log_header()
+
     # - k: outer iteration num
     # - it: inner iteration num
     # - idx: 1-n block idx
@@ -179,7 +190,7 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
                 break
         _iter_time = time.time() - start
         _Ax = sum(_vAx.values())
-        _vpfeas = _nonnegative(_Ax - b )
+        _vpfeas = _nonnegative(_Ax - b)
         eps_pfeas = np.linalg.norm(_vpfeas)
         cx = sum(_vcx.values())
 

@@ -3,6 +3,7 @@ functional interface module for model builder via gurobi and so forth
 """
 import logging
 import numpy as np
+import pandas as pd
 
 import scipy
 from scipy.sparse import csr_matrix
@@ -12,7 +13,7 @@ from gurobipy import *
 import data as ms
 import util_output as uo
 import util_solver as su
-from train import *
+from Train import *
 
 _logger = logging.getLogger("model-builder")
 _logger.setLevel(logging.DEBUG)
@@ -240,6 +241,56 @@ def _initialize_csr(model_index, coupling_constr_index, A, shape):
     new_rows = np.array([model_index[idx] for idx in A1.row])
     A_k = scipy.sparse.coo_matrix((A1.data, (new_rows, A1.col)), shape=shape)
     return A_k.tocsr()
+
+
+def generate_matlab_dict(model_dict, global_index, model_index):
+    def _matrix_size(_size):
+        m, n = _size
+
+        def _format_dit(x):
+            if x < 1e4:
+                return f"{x:d}"
+            return f"{x:.1e}"
+
+        return f"[{_format_dit(m)}, {_format_dit(n)}]"
+
+    mat_dict = dict()
+    mat_dict['trains'] = []
+    mat_dict['b'] = 0
+    logs = []
+    for idx, traNo in enumerate(sorted(model_dict.keys())):
+        A_k, B_k, b_k, c_k, b, sense_B_k, sense_A_k = getA_b_c(model_dict[traNo], model_index[traNo], len(global_index))
+        _, n = B_k.shape
+        struct = {
+            "A": A_k,
+            "B": B_k,
+            "b": b_k,
+            "c": c_k,
+            "sense_A_k": sense_A_k,
+            "sense_B_k": sense_B_k,
+            "binding": len(model_index[traNo]),
+            "id": traNo,
+            "train": ms.train_list[idx],
+            "n": n,
+        }
+        #
+        mat_dict['b'] = b
+        mat_dict['trains'].append(struct)
+        logs.append(
+            dict(zip(
+                ["idx", "Ak", "Bk", "bk", "ck", "#bind"],
+                [traNo, _matrix_size(A_k.shape), _matrix_size(B_k.shape), _matrix_size(b_k.shape),
+                 _matrix_size(c_k.shape), len(model_index[traNo])]
+            ))
+        )
+    df = pd.DataFrame.from_records(logs)
+    log_tables = df.to_markdown(tablefmt="grid", index=False)
+    lines = log_tables.split('\n')
+    print(lines[0])
+    print(("|{:^" + f"{lines[0].__len__() - 2}" + "}|").format("multi-block model size info for railway time tabling"))
+    print(("|{:^" + f"{lines[0].__len__() - 2}" + "}|").format("showing first 10 blocks"))
+    print("\n".join(lines[0:23]))
+    return mat_dict
 
 
 def create_decomposed_models():
