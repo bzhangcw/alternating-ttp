@@ -293,7 +293,7 @@ def generate_matlab_dict(model_dict, global_index, model_index):
     return mat_dict
 
 
-def create_decomposed_models():
+def create_decomposed_models(max_train_size: bool = True):
     # @update:
     #   - remove s_arcs
     #   - remote zjv
@@ -385,7 +385,12 @@ def create_decomposed_models():
                     index_array.append(global_index[_tp, station, speed, v_station_ahead, t])
 
         # maximum number of trains, by add up z
-        obj_expr = -quicksum(xe[e.index] for e in g.vs[tr._ig_s].out_edges())
+        if_train_sel = quicksum(xe[e.index] for e in g.vs[tr._ig_s].out_edges())
+        if max_train_size:
+            obj_expr = -if_train_sel
+        else:
+            M = 1e+7
+            obj_expr = quicksum(xe[e.index] * e['weight'] for e in g.es) + M * (1 - if_train_sel)
 
         model.setObjective(obj_expr, sense=GRB.MINIMIZE)
         # model.setParam("LogToConsole", 1)
