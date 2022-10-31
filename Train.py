@@ -438,11 +438,38 @@ class Train(object):
             # attr updates.
             e['price'] = c[e.index]
 
-    def vectorize_shortest_path(self, option='dual'):
+    def vectorize_shortest_path(self, _c, option='dual', backend='grb', **kwargs):
+        if backend == 'grb':
+            return self.vectorize_shortest_path_grb(_c, option=option, **kwargs)
+        else:
+            return self.vectorize_shortest_path_ig(_c, option=option, **kwargs)
+
+    def create_shortest_path_model(self, blk):
+        import gurobipy as grb
+        model = grb.Model(f"model-{self.traNo}")
+        m, n = blk['B'].shape
+        x = model.addMVar(shape=n, lb=0, ub=1)
+        model.addConstr(blk['B'] @ x == blk['b'].flatten())
+        return model, x
+
+    def vectorize_shortest_path_grb(self, _c, model_and_x=None, **kwargs):
+        import gurobipy as grb
+        if model_and_x is None:
+            raise ValueError("create grb model first!")
+        model, x = model_and_x
+        model.setObjective(_c.T @ x, sense=grb.GRB.MINIMIZE)
+        model.setParam(grb.GRB.Param.LogToConsole, 0)
+        model.optimize()
+        return x.x
+
+    def vectorize_shortest_path_ig(self, _c, option='dual', **kwargs):
         """
          output edge-path-format of the shortest path
          in vectorized form
         """
+        # save to price
+        self.vectorize_update_arc_multiplier(_c.flatten() - _c.min())
+
         i, j = self.source, self.sink
         _g = self.subgraph if option.startswith('dual') else self.subgraph_primal
         _price = 'price' if option.startswith('dual') else 'weight'

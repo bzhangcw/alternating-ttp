@@ -15,7 +15,7 @@ if __name__ == '__main__':
 
     ms.setup(params_sys)
 
-    model_dict, global_index, model_index = create_decomposed_models(max_train_size=True)
+    model_dict, global_index, model_index = create_decomposed_models(obj_type=params_sys.obj)
 
     mat_dict = generate_matlab_dict(model_dict, global_index, model_index)
     savemat(f"ttp_{params_sys.train_size}_{params_sys.station_size}_{params_sys.time_span}.mat", mat_dict,

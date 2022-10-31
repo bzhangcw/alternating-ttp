@@ -47,6 +47,7 @@ class BCDParams(object):
         self.dual_method = "pdhg"  # "lagrange" or "pdhg"
         self.primal_heuristic_method = "jsp"  # "jsp" or "seq"
         self.feasible_provider = "jsp"  # "jsp" or "seq"
+        self.sspbackend = "grb"
         self.max_number = 1
         self.norms = ([], [], [])
         self.multipliers = ([], [], [])
@@ -57,6 +58,7 @@ class BCDParams(object):
         import os
         self.primal_heuristic_method = os.environ.get('primal', 'jsp')
         self.dual_method = os.environ.get('dual', 'pdhg_alm')
+        self.sspbackend = os.environ.get('sspbackend', 'grb')
 
     def update_bound(self, lb):
         if lb >= self.lb:
@@ -96,6 +98,21 @@ class BCDParams(object):
         self.multipliers = ([], [], [])
         self.parse_environ()
 
+    def show_log_header(self):
+        headers = ["k", "t", "c'x", "lobj", "|Ax - b|", "error", "rho", "tau", "iter"]
+        slots = ["{:^3s}", "{:^7s}", "{:^9s}", "{:^9s}", "{:^10s}", "{:^10s}", "{:^9s}", "{:^9s}", "{:4s}"]
+        _log_header = " ".join(slots).format(*headers)
+        lt = _log_header.__len__()
+        print("*" * lt)
+        print(("{:^" + f"{lt}" + "}").format("BCD for MILP"))
+        print(("{:^" + f"{lt}" + "}").format("(c) Chuwen Zhang, Shanwen Pu, Rui Wang"))
+        print(("{:^" + f"{lt}" + "}").format("2022"))
+        print("*" * lt)
+        print(("{:^" + f"{lt}" + "}").format(f"backend: {self.sspbackend}"))
+        print("*" * lt)
+        print(_log_header)
+        print("*" * lt)
+
 
 def _Ax(block, x):
     return block['A'] @ x
@@ -104,20 +121,6 @@ def _Ax(block, x):
 @np.vectorize
 def _nonnegative(x):
     return max(x, 0)
-
-
-def show_log_header():
-    headers = ["k", "t", "c'x", "lobj", "|Ax - b|", "error", "rho", "tau", "iter"]
-    slots = ["{:^3s}", "{:^7s}", "{:^9s}", "{:^9s}", "{:^10s}", "{:^10s}", "{:^9s}", "{:^9s}", "{:4s}"]
-    _log_header = " ".join(slots).format(*headers)
-    lt = _log_header.__len__()
-    print("*" * lt)
-    print(("{:^" + f"{lt}" + "}").format("BCD for MILP"))
-    print(("{:^" + f"{lt}" + "}").format("(c) Chuwen Zhang, Shanwen Pu, Rui Wang"))
-    print(("{:^" + f"{lt}" + "}").format("2022"))
-    print("*" * lt)
-    print(_log_header)
-    print("*" * lt)
 
 
 def optimize(bcdpar: BCDParams, mat_dict: Dict):
@@ -146,7 +149,7 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
     lbd = rho * np.ones(b.shape)
     # logger
 
-    show_log_header()
+    bcdpar.show_log_header()
 
     # - k: outer iteration num
     # - it: inner iteration num
@@ -158,6 +161,11 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
     _vcx = {idx: (blk['c'].T @ xk[idx]).trace() for idx, blk in enumerate(blocks)}
     # x_k - x_k* (fixed point error)
     _eps_fix_point = {idx: 0 for idx, blk in enumerate(blocks)}
+    if bcdpar.sspbackend == 'grb':
+        for idx, blk in enumerate(blocks):
+            train: Train = blk['train']
+            _c = blk['c']
+            blk['mx'] = train.create_shortest_path_model(blk)
     for k in range(bcdpar.itermax):
         for it in range(bcdpar.linmax):
             # idx: A[idx]@x[idx]
@@ -170,10 +178,10 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
                 _c = blk['c'] \
                      + rho * Ak.T @ _nonnegative(_Ax - b + lbd / rho) \
                      + (0.5 - xk[idx]) / tau
-                # save to price
-                train.vectorize_update_arc_multiplier(_c.flatten() - _c.min())
                 # compute shortest path
-                _x = train.vectorize_shortest_path().reshape(_c.shape)
+                _x = train.vectorize_shortest_path(
+                    _c, blk=blk, backend=bcdpar.sspbackend, model_and_x=blk.get('mx')
+                ).reshape(_c.shape)
                 # accept or not
                 _v_sp = (_c.T @ _x).trace()
                 if _v_sp > 0:

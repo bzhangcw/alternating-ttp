@@ -21,7 +21,7 @@ if __name__ == '__main__':
 
     ms.setup(params_sys)
 
-    model_dict, global_index, model_index = create_decomposed_models()
+    model_dict, global_index, model_index = create_decomposed_models(obj_type=params_sys.obj)
 
 
     mat_dict = generate_matlab_dict(model_dict, global_index, model_index)

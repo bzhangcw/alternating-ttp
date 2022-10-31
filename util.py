@@ -74,6 +74,10 @@ class SysParams(object):
     time_span = 0
     iter_max = 0
     up = 0
+    OBJ_DESCRIPTION = {
+        0: "maximum_train_size",
+        1: "minimum_edge_weight"
+    }
 
     def __init__(self):
         subdir_result = self.subdir_result = datetime.datetime.now().strftime('%y%m%d-%H%M')
@@ -91,11 +95,15 @@ class SysParams(object):
         self.time_span = int(os.environ.get('time_span', 1080))
         self.iter_max = int(os.environ.get('iter_max', 100))
         self.up = int(os.environ.get('up', 0))
+        self.obj = int(os.environ.get('obj', 0))
         self.log_problem_size(logger)
 
     def log_problem_size(self, logger):
         logger.info(
             f"size: #train,#station,#timespan,#iter_max: {self.train_size, self.station_size, self.time_span, self.iter_max}"
+        )
+        logger.info(
+            f"use problem objective {SysParams.OBJ_DESCRIPTION[self.obj]}"
         )
 
 

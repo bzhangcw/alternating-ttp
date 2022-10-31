@@ -11,6 +11,7 @@ import tqdm
 from gurobipy import *
 
 import data as ms
+import util
 import util_output as uo
 import util_solver as su
 from Train import *
@@ -293,7 +294,7 @@ def generate_matlab_dict(model_dict, global_index, model_index):
     return mat_dict
 
 
-def create_decomposed_models(max_train_size: bool = True):
+def create_decomposed_models(obj_type=0):
     # @update:
     #   - remove s_arcs
     #   - remote zjv
@@ -386,11 +387,13 @@ def create_decomposed_models(max_train_size: bool = True):
 
         # maximum number of trains, by add up z
         if_train_sel = quicksum(xe[e.index] for e in g.vs[tr._ig_s].out_edges())
-        if max_train_size:
+        if obj_type==0:
             obj_expr = -if_train_sel
-        else:
+        elif obj_type==1:
             M = 1e+7
             obj_expr = quicksum(xe[e.index] * e['weight'] for e in g.es) + M * (1 - if_train_sel)
+        else:
+            raise ValueError(f"unsupported obj type, currently: {util.SysParams.OBJ_DESCRIPTION.values()}")
 
         model.setObjective(obj_expr, sense=GRB.MINIMIZE)
         # model.setParam("LogToConsole", 1)
