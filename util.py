@@ -76,7 +76,7 @@ class SysParams(object):
     up = 0
     OBJ_DESCRIPTION = {
         0: "maximum_train_size",
-        1: "minimum_edge_weight"
+        1: "maximum_edge_weight"
     }
 
     def __init__(self):

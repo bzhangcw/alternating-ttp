@@ -390,8 +390,8 @@ def create_decomposed_models(obj_type=0):
         if obj_type==0:
             obj_expr = -if_train_sel
         elif obj_type==1:
-            M = 1e+7
-            obj_expr = quicksum(xe[e.index] * e['weight'] for e in g.es) + M * (1 - if_train_sel)
+            # M = 1e+7
+            obj_expr = - quicksum(xe[e.index] * e['weight'] for e in g.es) # + M * (1 - if_train_sel)
         else:
             raise ValueError(f"unsupported obj type, currently: {util.SysParams.OBJ_DESCRIPTION.values()}")
 
