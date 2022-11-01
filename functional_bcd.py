@@ -48,17 +48,19 @@ class BCDParams(object):
         self.primal_heuristic_method = "jsp"  # "jsp" or "seq"
         self.feasible_provider = "jsp"  # "jsp" or "seq"
         self.sspbackend = "grb"
+        self.dualobjtype = 1
         self.max_number = 1
         self.norms = ([], [], [])
         self.multipliers = ([], [], [])
         self.itermax = 10000
-        self.linmax = 10
+        self.linmax = 1
 
     def parse_environ(self):
         import os
         self.primal_heuristic_method = os.environ.get('primal', 'jsp')
         self.dual_method = os.environ.get('dual', 'pdhg_alm')
         self.sspbackend = os.environ.get('sspbackend', 'grb')
+        self.dualobjtype = int(os.environ.get('dualobj', 1))
 
     def update_bound(self, lb):
         if lb >= self.lb:
@@ -118,9 +120,12 @@ def _Ax(block, x):
     return block['A'] @ x
 
 
-@np.vectorize
+# @np.vectorize
+# def _nonnegative(x):
+#     return max(x, 0)
 def _nonnegative(x):
-    return max(x, 0)
+    a = x >= 0
+    return x * a
 
 
 def optimize(bcdpar: BCDParams, mat_dict: Dict):
@@ -139,14 +144,16 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
     b = mat_dict['b']
     m, _ = b.shape
     A = scipy.sparse.hstack([blk['A'] for idx, blk in enumerate(blocks)])
-    Anorm = 20  # scipy.sparse.linalg.norm(A) / 10
+    A1 = blocks[0]['A']
+    Anorm = scipy.sparse.linalg.norm(A1)
+    # Anorm = np.linalg.norm(A1)
 
     # alias
     rho = 1e-2
-    tau = 1 / (Anorm ** 2 * rho)
-    sigma = 2
-    xk = [np.ones((blk['n'], 1)) for idx, blk in enumerate(blocks)]
-    lbd = rho * np.ones(b.shape)
+    tau = 1 / (Anorm * rho)
+    sigma = 1.1
+    xk = [np.zeros((blk['n'], 1)) for idx, blk in enumerate(blocks)]
+    lbd = rho * np.zeros(b.shape)
     # logger
 
     bcdpar.show_log_header()
@@ -175,9 +182,18 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
                 # update gradient
                 Ak = blk['A']
                 _Ax = sum(_vAx.values())
-                _c = blk['c'] \
-                     + rho * Ak.T @ _nonnegative(_Ax - b + lbd / rho) \
-                     + (0.5 - xk[idx]) / tau
+
+                if bcdpar.dualobjtype == 1:
+                    _c = (blk['c'] + Ak.T @ (lbd + rho * _nonnegative(_Ax - Ak @ xk[idx] - b / 2)))
+                elif bcdpar.dualobjtype == 2:
+                    # todo, implement _c
+                    # _c = blk['c'] \
+                    #      + rho * Ak.T @ _nonnegative(_Ax - b + lbd / rho) \
+                    #      + (0.5 - xk[idx]) / tau
+                    pass
+                else:
+                    raise ValueError(f"cannot recognize type {bcdpar.dualobjtype}")
+
                 # compute shortest path
                 _x = train.vectorize_shortest_path(
                     _c, blk=blk, backend=bcdpar.sspbackend, model_and_x=blk.get('mx')
@@ -204,16 +220,17 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
         eps_pfeas = np.linalg.norm(_vpfeas)
         cx = sum(_vcx.values())
 
-        lobj = cx + (_nonnegative(_Ax - b + lbd / rho) ** 2).sum() * rho / 2 - np.linalg.norm(lbd) ** 2 / 2 / rho
+        # lobj = cx + (_nonnegative(_Ax - b + lbd / rho) ** 2).sum() * rho / 2 - np.linalg.norm(lbd) ** 2 / 2 / rho
+        lobj = cx + (lbd.T * (_Ax - b)).sum() + (_nonnegative(_Ax - b) ** 2).sum() * rho / 2
         eps_fp = sum(_eps_fix_point.values())
         _log_line = "{:03d} {:.1e} {:+.2e} {:+.2e} {:+.3e} {:+.3e} {:+.3e} {:.2e} {:04d}".format(
             k, _iter_time, cx, lobj, eps_pfeas, eps_fp, rho, tau, it + 1
         )
         print(_log_line)
-        if eps_pfeas == 0 and eps_fp < 1e-4:
+        if eps_pfeas == 0:
             break
 
-        rho *= sigma
         lbd = _nonnegative((_Ax - b) * rho + lbd)
+        rho *= sigma
 
         bcdpar.iter += 1

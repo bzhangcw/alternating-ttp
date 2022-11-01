@@ -448,8 +448,8 @@ class Train(object):
         import gurobipy as grb
         model = grb.Model(f"model-{self.traNo}")
         m, n = blk['B'].shape
-        x = model.addMVar(shape=n, lb=0, ub=1)
-        model.addConstr(blk['B'] @ x == blk['b'].flatten())
+        x = model.addMVar(shape=n, lb=0, ub=1, vtype=grb.GRB.BINARY)
+        model.addConstr(blk['B'] @ x <= blk['b'].flatten())
         return model, x
 
     def vectorize_shortest_path_grb(self, _c, model_and_x=None, **kwargs):
@@ -513,7 +513,7 @@ class Train(object):
 
 
 import gurobipy as gb
-import coptpy as cp
+# import coptpy as cp
 
 engine = gb
 quicksum = sum

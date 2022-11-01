@@ -2,6 +2,8 @@
 functional interface module for model builder via gurobi and so forth
 """
 import logging
+
+import igraph
 import numpy as np
 import pandas as pd
 
@@ -56,25 +58,27 @@ def create_neighborhood(v_station_after, t, interval):
 # all-in-one milp model
 ##############################
 
-def optimize(model, zjv):
+def optimize(model, zjv=None):
     model.optimize()
-    import pandas as pd
-    zsol = pd.Series(model.getAttr("X", zjv))
-    zsol = zsol[zsol > 0]
-    for tr in ms.train_list:
-        tr.is_best_feasible = False
-        try:
-            tb = zsol[tr.traNo].index
-            if tb.size > 2:
-                for node in tb:
-                    tr.timetable[node[0]] = node[1]
-                    tr.is_best_feasible = True
-        except:
-            print(tr.traNo, "not available")
-    uo.plot_timetables_h5(ms.train_list, ms.miles, ms.station_list, param_sys=params_sys, param_subgrad=params_subgrad)
+    # todo, fix this.
+    # import pandas as pd
+    # zsol = pd.Series(model.getAttr("X", zjv))
+    # zsol = zsol[zsol > 0]
+    # for tr in ms.train_list:
+    #     tr.is_best_feasible = False
+    #     try:
+    #         tb = zsol[tr.traNo].index
+    #         if tb.size > 2:
+    #             for node in tb:
+    #                 tr.timetable[node[0]] = node[1]
+    #                 tr.is_best_feasible = True
+    #     except:
+    #         print(tr.traNo, "not available")
+    # uo.plot_timetables_h5(ms.train_list, ms.miles, ms.station_list, param_sys=params_sys, param_subgrad=params_subgrad)
 
 
-def create_milp_model():
+def create_milp_model(obj_type=0):
+    logger.info("create an all-in-one model")
     model = Model("quadratic-proximal-ssp")
 
     univ_nodes = tuplelist(
@@ -89,11 +93,12 @@ def create_milp_model():
     s_arcs = model.addVars(
         (tr.traNo for tr in ms.train_list), vtype=GRB.BINARY, name='s_arcs'
     )
-
+    xes = {}
     for tr in tqdm.tqdm(ms.train_list):
         # note xe are actually different for each train: j
         g = tr.subgraph
-        xe = model.addVars((e['name'] for e in g.es), lb=0.0, ub=1.0, vtype=GRB.BINARY, name=f'e@{tr.traNo}')
+        xes[tr.traNo] = xe = model.addVars((e['name'] for e in g.es), lb=0.0, ub=1.0, vtype=GRB.BINARY,
+                                           name=f'e@{tr.traNo}')
         for v in g.vs:
             in_edges = v.in_edges()
             out_edges = v.out_edges()
@@ -126,7 +131,6 @@ def create_milp_model():
 
     # binding constraints by multiway~
     # ['aa', 'ap', 'ss', 'sp', 'pa', 'ps', 'pp']
-
     for _tp, (bool_affix_ahead, bool_affix_after) in tqdm.tqdm(bool_affix_safe_int_map.items()):
         ahead, after = _tp
         sub_safe_int = ms.safe_int[_tp]
@@ -148,9 +152,20 @@ def create_milp_model():
                     LinExpr(ahead_expr + after_expr) <= 1,
                     f"multiway_{_tp}@{speed}@{v_station_ahead}:{v_station_after}@{t}"
                 )
-
+    if obj_type == 0:
+        obj_expr = -quicksum(s_arcs.values())
+    elif obj_type == 1:
+        # M = 1e+7
+        # obj_expr = - quicksum(xe[e.index] * e['weight'] for e in g.es)  # + M * (1 - if_train_sel)
+        obj_expr = LinExpr(0.0)
+        for tr in tqdm.tqdm(ms.train_list):
+            # note xe are actually different for each train: j
+            g: igraph.Graph = tr.subgraph
+            xe = xes[tr.traNo]
+            obj_expr -= quicksum(e['weight'] * xe[e['name']] for e in g.es)
+    else:
+        raise ValueError(f"unsupported obj type, currently: {util.SysParams.OBJ_DESCRIPTION.values()}")
     # maximum number of trains, by add up z
-    obj_expr = -quicksum(s_arcs.values())
 
     model.setObjective(obj_expr, sense=GRB.MINIMIZE)
     model.setParam("LogToConsole", 1)
@@ -244,7 +259,7 @@ def _initialize_csr(model_index, coupling_constr_index, A, shape):
     return A_k.tocsr()
 
 
-def generate_matlab_dict(model_dict, global_index, model_index):
+def generate_matlab_dict(model_dict, global_index, model_index, dump=False):
     def _matrix_size(_size):
         m, n = _size
 
@@ -271,9 +286,10 @@ def generate_matlab_dict(model_dict, global_index, model_index):
             "sense_B_k": sense_B_k,
             "binding": len(model_index[traNo]),
             "id": traNo,
-            "train": ms.train_list[idx],
             "n": n,
         }
+        if not dump:
+            struct["train"] = ms.train_list[idx]
         #
         mat_dict['b'] = b
         mat_dict['trains'].append(struct)
@@ -387,11 +403,11 @@ def create_decomposed_models(obj_type=0):
 
         # maximum number of trains, by add up z
         if_train_sel = quicksum(xe[e.index] for e in g.vs[tr._ig_s].out_edges())
-        if obj_type==0:
+        if obj_type == 0:
             obj_expr = -if_train_sel
-        elif obj_type==1:
+        elif obj_type == 1:
             # M = 1e+7
-            obj_expr = - quicksum(xe[e.index] * e['weight'] for e in g.es) # + M * (1 - if_train_sel)
+            obj_expr = - quicksum(xe[e.index] * e['weight'] for e in g.es)  # + M * (1 - if_train_sel)
         else:
             raise ValueError(f"unsupported obj type, currently: {util.SysParams.OBJ_DESCRIPTION.values()}")
 
