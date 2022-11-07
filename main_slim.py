@@ -1,5 +1,6 @@
 import datetime
 import os
+import re
 import time
 from typing import *
 
@@ -136,7 +137,8 @@ def read_dwell_time(path):
 
 def read_station_stop_start_addtime(path):
     global stop_addTime, start_addTime
-    df = pd.read_excel(path, dtype={"上行停车附加时分": int, "上行起车附加时分": int, "车站名称": str}, engine='openpyxl')
+    df = pd.read_excel(path, dtype={"上行停车附加时分": int, "上行起车附加时分": int, "车站名称": str},
+                       engine='openpyxl')
     df_350 = df[df["列车速度"] == 350].set_index("车站名称")
     df_300 = df[df["列车速度"] == 300].set_index("车站名称")
     stop_addTime[350] = df_350["上行停车附加时分"].to_dict()
@@ -151,6 +153,40 @@ def get_train_timetable_from_result():
             continue
         for node in train.best_path:
             train.timetable[node[0]] = node[1]
+
+
+def read_route_conflict_info(path):
+    routes = []  # 路径
+    route_conflicts = {}
+    reachable_boundary_track_route_pairs = {}
+    end_points = []
+    route_index = {}
+    with open(path, 'r', encoding='gbk') as f:
+        for line in f.readlines():
+            line_list = re.split("\t|\n|,| |-->|<|>", line)
+            line_list = list(filter(lambda val: val != '', line_list))
+            l = re.split(':', line_list[2])
+            line_list[2] = l[0] + ':' + l[2]
+            routes.append([line_list[0], line_list[1], line_list[2], l[0] + ':' + l[1] + ':' + l[2]])
+            route_conflicts[line_list[0]] = line_list[3:]
+            route_index[(line_list[1], line_list[2])] = line_list[0]
+            end_points.extend([line_list[1], line_list[2]])
+    end_points = list(set(end_points))
+    station_boundaries = list(filter(lambda val: val[:2] == "站界", end_points))  # 站界
+    tracks = list(filter(lambda val: val[:2] == "站线", end_points))  # 此处的“站线”即指“股道”，而不是进出站路径
+
+    # for end_point in end_points:
+    #     reachable_boundary_track_pairs[end_point] = []
+    # for k in route_conflicts.keys():
+    #     reachable_boundary_track_pairs[k[0]].append(k[1])
+
+    for boundary in station_boundaries:
+        reachable_boundary_track_route_pairs[boundary] = {}
+        for track in tracks:
+            reachable_boundary_track_route_pairs[boundary][track] = [route[0] for route in routes if
+                                                                     (route[1] == boundary and route[2] == track)]
+
+    return route_index, route_conflicts, station_boundaries, tracks, routes, reachable_boundary_track_route_pairs
 
 
 def update_lagrangian_multipliers(alpha, subgradient_dict):
@@ -448,6 +484,22 @@ def create_tr_subgraph(tr):
     return tr
 
 
+# def filter_bound(z):
+#     return 'B8' in z or 'B9' in z
+#
+#
+# def filter_plat(y):
+#     plats = ['站线:8', '站线:9', '站线:10', '站线:11', '站线:XII', '站线:XIII', '站线:XIV', '站线:XV', '站线:16', '站线:17', '站线:18', '站线:19']
+#     return any(p in y for p in plats)
+
+
+def filter_meso_info(route_index, route_conflicts, routes, reachable_boundary_track_route_pairs, station_boundaries, tracks):
+    route_index = {k: v for k, v in route_index.items() if k[0] in station_boundaries}
+    route_conflicts = {k: v for k, v in route_conflicts.items() if k in set(route_index.values())}
+    routes = [route for route in routes if route[1] in station_boundaries and route[2] in tracks]
+    reachable_boundary_track_route_pairs = {k: v for k, v in reachable_boundary_track_route_pairs.items() if 'B8' in k or 'B9' in k}
+
+
 if __name__ == '__main__':
 
     params_sys = SysParams()
@@ -478,6 +530,10 @@ if __name__ == '__main__':
     else:
         read_train('raw_data/6-lineplan-down.xlsx', train_size, time_span)
     read_intervals('raw_data/5-safe-intervals.xlsx')
+    route_index, route_conflicts, station_boundaries, tracks, routes, reachable_boundary_track_route_pairs = \
+        read_route_conflict_info('raw_data/RouteConflictInfo.txt')
+    station_boundaries = {'站界:B8', '站界:B9'}
+    tracks = {'站线:8', '站线:9', '站线:10', '站线:11', '站线:XII', '站线:XIII', '站线:XIV', '站线:XV', '站线:16', '站线:17', '站线:18', '站线:19'}
 
     '''
     initialization
