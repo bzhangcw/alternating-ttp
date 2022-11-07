@@ -87,7 +87,7 @@ class SysParams(object):
     def parse_environ(self):
         import os
         self.station_size = int(os.environ.get('station_size', 29))
-        self.train_size = int(os.environ.get('train_size', 292))
+        self.train_size = int(os.environ.get('train_size', 50))
         self.time_span = int(os.environ.get('time_span', 1080))
         self.iter_max = int(os.environ.get('iter_max', 100))
         self.up = int(os.environ.get('up', 0))

@@ -486,7 +486,7 @@ class Train(object):
 
 
 import gurobipy as gb
-import coptpy as cp
+# import coptpy as cp
 
 engine = gb
 quicksum = sum
