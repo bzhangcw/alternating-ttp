@@ -177,14 +177,12 @@ class Train(object):
         else:
             raise ValueError(f"backend {self.backend} is not supported")
 
-    def update_arc_multiplier(self, option="lagrange", gamma=0):
+    def update_arc_multiplier(self, option="lagrange", gamma=0, param_sys=None, **kwargs):
         """
         rebuild current price/multiplier to cal shortest path
         """
-        if self.backend == 0:
-            self.update_arc_multiplier_nx(option, gamma)
-        elif self.backend == 1:
-            self.update_arc_multiplier_ig(option, gamma)
+        if self.backend == 1:
+            self.update_arc_multiplier_ig(option, gamma, param_sys)
         else:
             raise ValueError(f"backend {self.backend} is not supported")
 
@@ -204,13 +202,13 @@ class Train(object):
         else:
             raise ValueError(f"backend {self.backend} is not supported")
 
-    def shortest_path_primal(self):
+    def shortest_path_primal(self, **kwargs):
         """
         """
         self.is_feasible = False
         self.feasible_path = None
         self.feasible_cost = np.inf
-        ssp, cost = self.shortest_path(option='primal')
+        ssp, cost = self.shortest_path(option='primal', **kwargs)
         self.is_feasible = (cost < np.inf)
 
         return ssp, cost
@@ -239,13 +237,14 @@ class Train(object):
         self._ig_nodes_id = _node_id = dict(zip(self._ig_nodes, range(_n_nodes)))
         _edges = ((_node_id[i], _node_id[j]) for (i, j), v in self._ig_edges.items())
         _weight = list(self._ig_edges.values())
+        _indicator = list(-1 if _s == self.source else 0 for (_s, _t), v in self._ig_edges.items())
         _name = list(self._ig_edges.keys())
         self.subgraph = ig.Graph(
             directed=True,
             graph_attrs={"trainNo": self.traNo},
             n=_n_nodes,
             edges=_edges,
-            edge_attrs={"weight": _weight, "name": _name},
+            edge_attrs={"weight": _weight, "name": _name, "indicator": _indicator},
             vertex_attrs={"name": self._ig_nodes}
         )
         # add station and time for query
@@ -338,7 +337,7 @@ class Train(object):
         self._ig_t = self.subgraph.vcount() - 1
         self.max_edge_weight = np.max(self.subgraph.es['weight'])
 
-    def update_arc_multiplier_ig(self, option="lagrange", gamma=0):
+    def update_arc_multiplier_ig(self, option="lagrange", gamma=0, param_sys: SysParams = None):
         """
         rebuild current price/multiplier to cal shortest path
         """
@@ -346,7 +345,7 @@ class Train(object):
         subg = self.subgraph
         for e in subg.es:
             i, j = e['name']
-            w = e['weight']
+            w = e['weight'] if param_sys.obj == 1 else e['indicator'] + 1
             if option == "lagrange":
                 e["multiplier"] = xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][
                     self.v_sta_type[j[0]]] if j[0] not in ["s_", "_t"] else 0
@@ -361,7 +360,8 @@ class Train(object):
                 # e["multiplier"] = xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]] + gamma * (0.5 - ((i, j) in self.opt_path_LR_dict)) if j[0] not in ["s_", "_t"] else 0
                 e["multiplier_linear"] = \
                     xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]] \
-                    + max(xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] ** 2 * yvc_multiplier[j][self.v_sta_type[j[0]]] - 0.5, 0) \
+                    + max(xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] ** 2 * yvc_multiplier[j][
+                        self.v_sta_type[j[0]]] - 0.5, 0) \
                         if j[0] not in ["s_", "_t"] else 0
                 e["multiplier_quad"] = 0
                 e["multiplier"] = e["multiplier_linear"] + e["multiplier_quad"]
@@ -396,13 +396,19 @@ class Train(object):
         self.subgraph_primal.delete_vertices(_ig_all_nodes)
         self._ig_t_primal = self.subgraph_primal.vcount() - 1
 
-    def shortest_path_ig(self, option='dual'):
+    def shortest_path_ig(self, option='dual', objtype=1):
         """
         """
         i, j = self.source, self.sink
         _g = self.subgraph if option.startswith('dual') else self.subgraph_primal
-        _price = 'price' if option.startswith('dual') else 'weight'
         _sink = self._ig_t if option.startswith('dual') else self._ig_t_primal
+        if option.startswith('dual'):
+            _price = 'price'
+        elif objtype == 1:
+            _price = 'weight'
+        else:
+            _price = 'indicator'
+
         import warnings
 
         if option == 'dual_prox':
@@ -419,9 +425,15 @@ class Train(object):
                 ssp_literal = [_g.vs[i]['name'] for i in ssp]
                 # todo, fix this
                 edges = _g.get_eids(path=ssp)
-                cost = sum(_g.es[edges][_price])
+                if objtype == 1:
+                    cost = sum(_g.es[edges][_price])
+                else:
+                    cost = sum(_g.es[edges][_price]) - len(edges)
                 if option == "dual":
-                    lag_cost = sum(_g.es[edges]["multiplier"])
+                    if objtype == 1:
+                        lag_cost = sum(_g.es[edges]["multiplier"])
+                    else:
+                        lag_cost = sum(_g.es[edges]["multiplier"]) - len(edges)
             except Exception as e:
                 # infeasible and unconnected case.
                 # you are unable to create a shortest path.

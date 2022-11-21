@@ -322,8 +322,8 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp", param
 
         for idx, train in enumerate(train_order):
             train.update_primal_graph(occupied_nodes, occupied_arcs, incompatible_arcs, safe_int)
-
-            train.feasible_path, train.feasible_cost = train.shortest_path_primal()
+            # the heuristic only works for 1, but we may summarize using 0
+            train.feasible_path, train.feasible_cost = train.shortest_path_primal(objtype=1)
             if not train.is_feasible:
                 path_cost_feasible += train.max_edge_weight * (len(train.staList) - 1)
                 not_feasible_trains.append((idx, train.traNo))
@@ -385,6 +385,7 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp", param
                     train.is_feasible = False
             count = path_count
 
+    path_cost_feasible = path_cost_feasible if params_sys.obj == 1 else - count
     return feasible_provider, path_cost_feasible, count, not_feasible_trains, buffer
 
 
@@ -522,9 +523,9 @@ if __name__ == '__main__':
         subgradient_dict = {}
         node_occupy_dict = defaultdict(lambda: {"a": 0, "s": 0, "p": 0})
         for train in train_list:
-            train.update_arc_multiplier(option=params_subgrad.dual_method, gamma=params_subgrad.gamma)
+            train.update_arc_multiplier(option=params_subgrad.dual_method, gamma=params_subgrad.gamma, param_sys=params_sys)
             train.save_prev_lr_path()
-            train.opt_path_LR, train.opt_cost_LR, train.opt_cost_multiplier = train.shortest_path()
+            train.opt_path_LR, train.opt_cost_LR, train.opt_cost_multiplier = train.shortest_path(objtype=params_sys.obj)
             path_cost_LR += train.opt_cost_LR
             update_node_occupy_dict(node_occupy_dict, train)
         subgradient_dict = update_subgradient_dict(node_occupy_dict)
@@ -567,9 +568,9 @@ if __name__ == '__main__':
                                       param_subgrad=params_subgrad)
 
         # check feasibility
-        # check_dual_feasibility(subgradient_dict, multiplier, train_list, LB)
         lb = path_cost_LR - sum(v for d in multiplier.values() for v in d.values())
-        params_subgrad.update_bound(lb)
+
+        params_subgrad.update_bound(lb) if params_sys.obj == 1 else params_subgrad.update_bound(-lb)
         params_subgrad.update_incumbent(path_cost_feasible)
         params_subgrad.update_gap()
 
