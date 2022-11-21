@@ -350,12 +350,20 @@ class Train(object):
             if option == "lagrange":
                 e["multiplier"] = xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][
                     self.v_sta_type[j[0]]] if j[0] not in ["s_", "_t"] else 0
-            elif option in ("pdhg", "pdhg_alm"):
+            elif option == "almp":
                 # e["multiplier"] = xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]] + gamma * (0.5 - ((i, j) in self.opt_path_LR_dict)) if j[0] not in ["s_", "_t"] else 0
                 e["multiplier_linear"] = \
                     xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]] \
                     - gamma * ((i, j) in self.opt_path_LR_dict) if j[0] not in ["s_", "_t"] else 0
                 e["multiplier_quad"] = gamma * 0.5 if j[0] not in ["s_", "_t"] else 0
+                e["multiplier"] = e["multiplier_linear"] + e["multiplier_quad"]
+            elif option == "almc":
+                # e["multiplier"] = xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]] + gamma * (0.5 - ((i, j) in self.opt_path_LR_dict)) if j[0] not in ["s_", "_t"] else 0
+                e["multiplier_linear"] = \
+                    xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] * yvc_multiplier[j][self.v_sta_type[j[0]]] \
+                    + max(xa_map[i, j][self.traNo][self.v_sta_type[j[0]]] ** 2 * yvc_multiplier[j][self.v_sta_type[j[0]]] - 0.5, 0) \
+                        if j[0] not in ["s_", "_t"] else 0
+                e["multiplier_quad"] = 0
                 e["multiplier"] = e["multiplier_linear"] + e["multiplier_quad"]
             else:
                 raise ValueError(f"option {option} is not supported")
@@ -513,6 +521,7 @@ class Train(object):
 
 
 import gurobipy as gb
+
 # import coptpy as cp
 
 engine = gb

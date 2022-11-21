@@ -47,6 +47,7 @@ logFormatter = logging.Formatter("%(asctime)s: %(message)s")
 logger = logging.getLogger("railway")
 logger.setLevel(logging.INFO)
 
+
 # consoleHandler = logging.StreamHandler(sys.stdout)
 # consoleHandler.setFormatter(logFormatter)
 # logger.addHandler(consoleHandler)
@@ -87,7 +88,6 @@ class SysParams(object):
         fileHandler.setFormatter(logFormatter)
         logger.addHandler(fileHandler)
 
-
     def parse_environ(self):
         import os
         self.station_size = int(os.environ.get('station_size', 29))
@@ -109,7 +109,17 @@ class SysParams(object):
 
 # subgradient params
 class SubgradParam(object):
-
+    """
+    The params for subgradient/dual update
+    You may choose:
+    @primal_heuristic_method:
+        - seq: the sequential heuristic in Zhang et al. 2020 (TR B.)
+        - seq_iter: iterative sequential heuristic by S. Pu
+        - path: the maximum independent set heuristic, by S. Pu and C. Zhang.
+    @dual:
+        - langrange: normal lagrangian relaxation (subgradient ascent)
+        - almp, almc: see the paper by Wang, Pu, Zhang
+    """
     def __init__(self):
         self.kappa = 0.2
         self.alpha = 1.0
@@ -123,17 +133,17 @@ class SubgradParam(object):
         self.lb_arr = []
         self.ub_arr = []
         self.gap = 1
-        self.dual_method = "pdhg"  # "lagrange" or "pdhg"
-        self.primal_heuristic_method = "seq"  # "jsp" or "seq"
-        self.feasible_provider = "seq"  # "jsp" or "seq"
+        self.dual_method = "almp"
+        self.primal_heuristic_method = "seq_iter"
+        self.feasible_provider = "seq_iter"
         self.max_number = 1
         self.norms = ([], [], [])
         self.multipliers = ([], [], [])
 
     def parse_environ(self):
         import os
-        self.primal_heuristic_method = os.environ.get('primal', 'seq')
-        self.dual_method = os.environ.get('dual', 'pdhg_alm')
+        self.primal_heuristic_method = os.environ.get('primal', 'seq_iter')
+        self.dual_method = os.environ.get('dual', 'almp')
 
     def update_bound(self, lb):
         if lb >= self.lb:
@@ -165,9 +175,9 @@ class SubgradParam(object):
         self.lb_arr = []
         self.ub_arr = []
         self.gap = 1
-        self.dual_method = "pdhg"  # "lagrange" or "pdhg"
-        self.primal_heuristic_method = "jsp"  # "jsp" or "seq"
-        self.feasible_provider = "jsp"  # "jsp" or "seq"
+        self.dual_method = "almp"
+        self.primal_heuristic_method = "seq_iter"
+        self.feasible_provider = "seq_iter"
         self.max_number = 1
         self.norms = ([], [], [])  # l1-norm, l2-norm, infty-norm
         self.multipliers = ([], [], [])

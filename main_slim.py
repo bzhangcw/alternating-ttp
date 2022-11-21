@@ -219,7 +219,7 @@ def update_node_occupy_dict(node_occupy_dict, train, option="lagrange", alpha=1)
     if option == "lagrange":
         for node in train.opt_path_LR[1:-1]:  # z_{j v}
             node_occupy_dict[node][train.v_sta_type[node[0]]] += 1
-    elif option == "pdhg":
+    elif option == "almp":
         for node in train.opt_path_LR[1:-1]:
             node_occupy_dict[node][train.v_sta_type[node[0]]] += 1 + alpha * (1 - (node in train.opt_path_LR_prev_dict))
     else:
@@ -296,8 +296,18 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp", param
     """
 
     __unused = args, kwargs
-    feasible_provider = 'seq'
-    iter_max = 10
+    if method == 'seq':
+        feasible_provider = 'seq'
+        iter_max = 1
+    elif method == 'seq_iter':
+        feasible_provider = 'seq_iter'
+        iter_max = 10
+    elif method == 'jsp':
+        raise ValueError("primal method JSP is deprecated")
+    else: # path still needs seq or seq_iter
+        feasible_provider = 'seq_iter'
+        iter_max = 10
+
     best_count = count = -1
     new_train_order = sorted(train_list, key=lambda tr: (tr.standard, tr.opt_cost_LR), reverse=True)
 
@@ -341,9 +351,7 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp", param
 
     logger.info(f"seq maximum cardinality: {count}")
 
-    if method == "seq":
-        pass
-    elif method == "path":
+    if method == "path":
         path_pool_manager: PathPoolManager = kwargs.get("path_pool_manager", None)
         assert path_pool_manager is not None
         for train in train_list:
@@ -376,10 +384,6 @@ def primal_heuristic(train_list, safe_int, jsp_init, buffer, method="jsp", param
                 else:
                     train.is_feasible = False
             count = path_count
-        # path_pool_manager.remove_useless_path(path_pool_manager.graph.vcount() // 2, set(feasible_train_paths.values()))
-
-    else:
-        raise TypeError(f"method has no wrong type: {method}")
 
     return feasible_provider, path_cost_feasible, count, not_feasible_trains, buffer
 
