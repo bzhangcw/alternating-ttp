@@ -1,8 +1,8 @@
-solver = "gurobi"
-if solver == "gurobi":
-    from gurobipy import Model, tupledict, GRB, quicksum, tuplelist
+solver = "copt"
+if solver == "copt":
+    from coptpy import Envr, tupledict, tuplelist, quicksum, COPT as CONST
 else:
-    pass
+    from gurobipy import Model, tupledict, tuplelist, quicksum, GRB as CONST
 
 
 class Meso:
@@ -45,7 +45,9 @@ class Meso:
 
     @staticmethod
     def create_model(*args, **kwargs):
-        if solver == "gurobi":
+        if solver == "copt":
+            return Envr().createModel(*args, **kwargs)
+        else:
             return Model(*args, **kwargs)
 
     def addVars(self):
@@ -62,7 +64,7 @@ class Meso:
                 region = [t for t in range(t0 - delta, t0 + delta + 1)]  # FIXME: push to (0, timespan)
                 for t in region:
                     assert (r, t, f) not in self.x
-                    self.x[r, t, f] = self.m.addVar(vtype=GRB.BINARY, name=f"x[{r},{t},{f}]")
+                    self.x[r, t, f] = self.m.addVar(vtype=CONST.BINARY, name=f"x[{r},{t},{f}]")
 
                     J_set.add((r, t))
                     if r in self.Ri:
@@ -85,12 +87,11 @@ class Meso:
         self.addConstrsOccup()
 
     def addConstrsMatching(self):
-        self.matching = self.m.addConstrs(
-            (self.x.sum('*', '*', f) <= 1
-             for f in self.F
-             ),
-            name="Match"
-        )
+        for f in self.F:
+            self.matching = self.m.addConstr(
+                self.x.sum('*', '*', f) <= 1,
+                name=f"Match[{f}]"
+            )
 
     def addConstrsPhyConflict(self):
         delta_1 = 5  # FIXME: delta_1
@@ -158,10 +159,12 @@ class Meso:
         pass
 
     def setObjective(self):
-        self.m.setObjective(self.x.sum(), sense=GRB.MAXIMIZE)
+        self.m.setObjective(self.x.sum(), sense=CONST.MAXIMIZE)
 
     def optimize(self):
-        if solver == "gurobi":
+        if solver == "copt":
+            self.m.solve()
+        else:
             self.m.optimize()
 
     def run(self):
@@ -169,3 +172,9 @@ class Meso:
         self.addConstrs()
         self.setObjective()
         self.optimize()
+
+    def resolveIIS(self):
+        self.m.computeIIS()
+        for constr in self.m.getConstrs():
+            if constr.IISConstr:
+                print(constr.ConstrName)

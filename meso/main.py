@@ -30,6 +30,6 @@ if __name__ == "__main__":
                                                             reachable_boundary_track_route_pairs,
                                                             station_boundaries,
                                                             tracks)
-    tr_delta = [3] * len(train_list)
+    tr_delta = [3] * len(train_list)   # TODO: different delta for each train
     meso = Meso(train_list, tr_delta, station_boundaries, tracks, routes, route_conflicts)
     meso.run()
