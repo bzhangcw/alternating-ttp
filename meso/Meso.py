@@ -111,7 +111,7 @@ class Meso:
 
         for r, t in self.Ji:
             nodes = [self.x.sum(nei, t_nei, '*')
-                     for nei in self.Ji
+                     for nei in self.Ri
                      for t_nei in range(t, t + delta_2)]
             self.inin[r, t] = self.m.addConstr(
                 quicksum(nodes) <= 1,
@@ -123,7 +123,7 @@ class Meso:
 
         for r, t in self.Jo:
             nodes = [self.x.sum(nei, t_nei, '*')
-                     for nei in self.Jo
+                     for nei in self.Ro
                      for t_nei in range(t, t + delta_3)]
             self.outout[r, t] = self.m.addConstr(
                 quicksum(nodes) <= 1,
@@ -135,7 +135,7 @@ class Meso:
 
         for r, t in self.Ji:
             nodes = [self.x.sum(nei, t_nei, '*')
-                     for nei in self.Jo
+                     for nei in self.Ro
                      for t_nei in range(t, t + delta_4)]
             self.inout[r, t] = self.m.addConstr(
                 quicksum(nodes) <= 1,
@@ -147,7 +147,7 @@ class Meso:
 
         for r, t in self.Jo:
             nodes = [self.x.sum(nei, t_nei, '*')
-                     for nei in self.Ji
+                     for nei in self.Ri
                      for t_nei in range(t, t + delta_5)]
             self.outin[r, t] = self.m.addConstr(
                 quicksum(nodes) <= 1,
