@@ -1,3 +1,4 @@
+from util import timing
 solver = "copt"
 if solver == "copt":
     from coptpy import Envr, tupledict, tuplelist, quicksum, COPT as CONST
@@ -50,6 +51,7 @@ class Meso:
         else:
             return Model(*args, **kwargs)
 
+    @timing
     def addVars(self):
         J_set = set()
         Ji_set = set()
@@ -77,6 +79,7 @@ class Meso:
         self.Ji = tuplelist(Ji_set)
         self.Jo = tuplelist(Jo_set)
 
+    @timing
     def addConstrs(self):
         self.addConstrsMatching()
         self.addConstrsPhyConflict()
@@ -86,6 +89,7 @@ class Meso:
         self.addConstrsOutin()
         self.addConstrsOccup()
 
+    @timing
     def addConstrsMatching(self):
         for f in self.F:
             self.matching = self.m.addConstr(
@@ -93,6 +97,7 @@ class Meso:
                 name=f"Match[{f}]"
             )
 
+    @timing
     def addConstrsPhyConflict(self):
         delta_1 = 5  # FIXME: delta_1
         for r, t in self.J:
@@ -107,6 +112,7 @@ class Meso:
                 name=f"Phy[{r},{t}]"
             )
 
+    @timing
     def addConstrsInin(self):
         delta_2 = 5  # FIXME
 
@@ -119,6 +125,7 @@ class Meso:
                 name=f"Inin[{r},{t}]"
             )
 
+    @timing
     def addConstrsOutout(self):
         delta_3 = 5  # FIXME
 
@@ -131,6 +138,7 @@ class Meso:
                 name=f"Outout[{r},{t}]"
             )
 
+    @timing
     def addConstrsInOut(self):
         delta_4 = 5  # FIXME
 
@@ -143,6 +151,7 @@ class Meso:
                 name=f"Inout[{r},{t}]"
             )
 
+    @timing
     def addConstrsOutin(self):
         delta_5 = 5  # FIXME
 
@@ -155,18 +164,21 @@ class Meso:
                 name=f"Outin[{r},{t}]"
             )
 
+    @timing
     def addConstrsOccup(self):
         pass
 
     def setObjective(self):
         self.m.setObjective(self.x.sum(), sense=CONST.MAXIMIZE)
 
+    @timing
     def optimize(self):
         if solver == "copt":
             self.m.solve()
         else:
             self.m.optimize()
 
+    @timing
     def run(self):
         self.addVars()
         self.addConstrs()

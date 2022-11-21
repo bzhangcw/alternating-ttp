@@ -1,17 +1,6 @@
 import re
-import sys
-import time
-from typing import *
+import pandas as pd
 from Train import Train
-from util import *
-
-logFormatter = logging.Formatter("%(asctime)s: %(message)s")
-logger = logging.getLogger("railway")
-logger.setLevel(logging.INFO)
-
-consoleHandler = logging.StreamHandler(sys.stdout)
-consoleHandler.setFormatter(logFormatter)
-logger.addHandler(consoleHandler)
 
 
 def parse_row_to_train(row, time_span=1080):

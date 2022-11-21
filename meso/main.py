@@ -1,13 +1,11 @@
 from dataLoader import read_train, read_route_conflict_info, filter_meso_info
-from util import *
+from util import SysParams
 from Meso import Meso
 
 if __name__ == "__main__":
     params_sys = SysParams()
-    params_subgrad = SubgradParam()
 
     params_sys.parse_environ()
-    params_subgrad.parse_environ()
 
     station_size = params_sys.station_size
     train_size = params_sys.train_size
