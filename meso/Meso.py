@@ -1,13 +1,36 @@
+import logging
+
+from Train import Train
+from meso_rules import MesoRules
 from util import timing
+
 solver = "copt"
 if solver == "copt":
     from coptpy import Envr, tupledict, tuplelist, quicksum, COPT as CONST
 else:
     from gurobipy import Model, tupledict, tuplelist, quicksum, GRB as CONST
 
+logging.basicConfig()
+_grb_logger = logging.getLogger("gurobipy.gurobipy")
+_grb_logger.setLevel(logging.ERROR)
+
+logFormatter = logging.Formatter("%(asctime)s: %(message)s")
+_logger = logging.getLogger("meso-system-scheduler")
+_logger.setLevel(logging.INFO)
+
 
 class Meso:
-    def __init__(self, trains, tr_delta, bounds, platforms, routes, route_conflicts):
+    def __init__(
+            self,
+            trains,
+            tr_delta,
+            bounds,
+            platforms,
+            routes,
+            route_conflicts,
+            rules: MesoRules,
+            station: int = 0
+    ):
         self.trains = trains
         assert len(tr_delta) == len(trains)
         self.tr_delta = tr_delta
@@ -22,8 +45,8 @@ class Meso:
                        for r in range(len(self.routes))}
 
         self.F = range(len(self.trains))
-        self.Fi = [i for i in self.F if self.trains[i].in_sta]  # FIXME
-        self.Fo = [i for i in self.F if not self.trains[i].in_sta]  # FIXME
+        self.Fi = [i for i in self.F if self.trains[i].bool_in_station]  # FIXME
+        self.Fo = [i for i in self.F if not self.trains[i].bool_in_station]  # FIXME
 
         self.R = range(len(self.routes))
         self.Ri = [i for i in self.R if 'B8' in self.routes[i][1]]  # FIXME
@@ -44,6 +67,15 @@ class Meso:
         self.inout = tupledict()
         self.outin = tupledict()
 
+        self.station = station
+        self.rules: MesoRules = rules
+        self.show()
+
+    def show(self):
+        _logger.info(f"problem basic description:")
+        _logger.info(f"we have:")
+        _logger.info(f"- # of trains: {self.trains.__len__()}")
+
     @staticmethod
     def create_model(*args, **kwargs):
         if solver == "copt":
@@ -58,8 +90,8 @@ class Meso:
         Jo_set = set()
 
         for f in self.F:
-            tr = self.trains[f]
-            R = self.Ri if tr.in_sta else self.Ro  # TODO: assert in_sta
+            tr:Train = self.trains[f]
+            R = self.Ri if tr.bool_in_station else self.Ro  # TODO: assert in_sta
             for r in R:
                 t0 = tr.macro_time  # TODO: assert macro_time
                 delta = self.tr_delta[f]
@@ -114,7 +146,14 @@ class Meso:
 
     @timing
     def addConstrsInin(self):
-        delta_2 = 5  # FIXME
+        """
+        arrival-arrival constraints
+        到到约束，包括同向/异向，
+        Returns:
+
+        """
+
+        delta_2 = self.rules.INT_AA
 
         for r, t in self.Ji:
             nodes = [self.x.sum(nei, t_nei, '*')
@@ -127,7 +166,8 @@ class Meso:
 
     @timing
     def addConstrsOutout(self):
-        delta_3 = 5  # FIXME
+        # D - D
+        delta_3 = self.rules.INT_DD
 
         for r, t in self.Jo:
             nodes = [self.x.sum(nei, t_nei, '*')
@@ -140,7 +180,8 @@ class Meso:
 
     @timing
     def addConstrsInOut(self):
-        delta_4 = 5  # FIXME
+        # A - D
+        delta_4 = self.rules.INT_OPPO_AD
 
         for r, t in self.Ji:
             nodes = [self.x.sum(nei, t_nei, '*')
@@ -153,7 +194,8 @@ class Meso:
 
     @timing
     def addConstrsOutin(self):
-        delta_5 = 5  # FIXME
+        # D - A
+        delta_5 = self.rules.INT_DA
 
         for r, t in self.Jo:
             nodes = [self.x.sum(nei, t_nei, '*')
@@ -189,4 +231,4 @@ class Meso:
         self.m.computeIIS()
         for constr in self.m.getConstrs():
             if constr.IISConstr:
-                print(constr.ConstrName)
+                _logger.info(constr.ConstrName)
