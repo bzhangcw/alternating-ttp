@@ -267,6 +267,8 @@ def read_timetable_csv(fpath, st=None, station_name_map=None):
 
 
 def read_local_macro_solution(fp, station_name='北京南'):
+    # todo, we have to be more careful if the station is not one of the ending ones.
+    # todo, currently, only works for 北京南
     df, train_paths = read_timetable_csv(fp, st=START_PERIOD, station_name_map=station_name_map)
     df = df.astype({"id": str})
     dfs = df.query(

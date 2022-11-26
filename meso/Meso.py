@@ -20,6 +20,9 @@ _logger.setLevel(logging.INFO)
 
 
 class Meso:
+    """
+    The meso model of a single station
+    """
     def __init__(
             self,
             trains,

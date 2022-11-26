@@ -11,7 +11,7 @@ class MesoRules(object):
     # INT - departure-departure (D-D)
     INT_DD = 3
     # I到到：同方向列车连续到达间隔时间（4min）。
-    # INT - arrival-arrival (A-A)
+    # INT - arrival-arrival (A-A)git
     INT_AA = 4
     # I到通：同方向列车先到后通间隔时间（3min）。
     # INT - arrival-passing (A-P)
