@@ -296,14 +296,16 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
             k, _iter_time, r.cb, cx, lobj, alobj, eps_pfeas, eps_fp, rho, tau, it + 1, idx_tau
         )
         print(_log_line)
+        ######################################################
+        # primal dual restart
+        ######################################################
         if eps_pfeas == 0:
-            # restart
             print(f":restarting epoch\n:kc = {kc}")
             if cx < r.cb:
                 r.xb = copy.deepcopy(xk)
                 r.cb = cx
             rho = rho0
-            xk = copy.deepcopy([(1 - _xx) for _xx in xk])
+            xk = copy.deepcopy([(1 - _xx) for _xx in xv])
             continue
 
         lbd = _nonnegative((_Ax - b) * rho + lbd)
