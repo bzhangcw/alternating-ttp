@@ -524,7 +524,8 @@ class Train(object):
         model = grb.Model(f"model-{self.traNo}")
         m, n = blk["B"].shape
         x = model.addMVar(shape=n, lb=0, ub=1, vtype=grb.GRB.CONTINUOUS)
-        model.addConstr(blk["B"] @ x <= blk["b"].flatten())
+        contrs = model.addConstr(blk["B"] @ x <= blk["b"].flatten())
+        contrs.setAttr(GRB.Attr.Sense, blk['sense_B_k'].flatten())
         return model, x
 
     def vectorize_shortest_path_grb(self, _c, model_and_x=None, **kwargs):
@@ -533,7 +534,6 @@ class Train(object):
         if model_and_x is None:
             raise ValueError("create grb model first!")
         model, x = model_and_x
-        # model.setObjective(_c.T @ x, sense=grb.GRB.MINIMIZE)
         x.setAttr(grb.GRB.Attr.Obj, _c.flatten())
         model.setParam(grb.GRB.Param.LogToConsole, 0)
         model.optimize()

@@ -50,10 +50,11 @@ class BCDParams(object):
         self.feasible_provider = "jsp"  # "jsp" or "seq"
         self.sspbackend = "grb"
         self.dualobjtype = 1
+        self.verbosity = 2
         self.max_number = 1
         self.norms = ([], [], [])
         self.multipliers = ([], [], [])
-        self.itermax = 10000
+        self.itermax = 200
         self.linmax = 1
 
     def parse_environ(self):
@@ -62,6 +63,7 @@ class BCDParams(object):
         self.dual_method = os.environ.get('dual', 'pdhg_alm')
         self.sspbackend = os.environ.get('sspbackend', 'grb')
         self.dualobjtype = int(os.environ.get('dualobj', 1))
+        self.verbosity = int(os.environ.get('verbosity', 1))
 
     def update_bound(self, lb):
         if lb >= self.lb:
@@ -164,17 +166,17 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
     # Anorm = np.linalg.norm(A1)
 
     # alias
-    rho = rho0 = 1e-2
+    rho = rho0 = 6e-1
     tau = tau0 = 1e-2
     tsig = 1
-    sigma = 1.1
+    sigma = 1.2
     cb = 1e6
     cx = 1e6
     np.random.seed(1)
     xb = [np.zeros((blk['n'], 1)) for idx, blk in enumerate(blocks)]
     xk = [np.random.random((blk['n'], 1)) for idx, blk in enumerate(blocks)]
     xv = [np.zeros((blk['n'], 1)) for idx, blk in enumerate(blocks)]
-    lbd = rho * np.zeros(b.shape)
+    lbd = rho * np.random.random(b.shape)
     r = Result()
     r.cx, r.cb, r.xb, r.xv, r.xk = cx, cb, xb, xv, xk
     # logger
@@ -184,17 +186,19 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
     #       it may not be the train no
     # A_k x_k
     _vAx = {idx: blk['A'] @ xk[idx] for idx, blk in enumerate(blocks)}
+    _Ax  = sum(_vAx.values())
     # c_k x_k
     _vcx = {idx: (blk['c'].T @ xk[idx]).trace() for idx, blk in enumerate(blocks)}
     # x_k - x_k* (fixed point error)
     _eps_fix_point = {idx: 0 for idx, blk in enumerate(blocks)}
+    _xnorm = {idx: 0 for idx, _ in enumerate(blocks)}
+    _grad = {idx: 0 for idx, _ in enumerate(blocks)}
     if bcdpar.sspbackend == 'grb':
         print("creating models")
         for idx, blk in enumerate(blocks):
             train: Train = blk['train']
             _c = blk['c']
             blk['mx'] = train.create_shortest_path_model(blk)
-
         print("creating models finished")
 
     alobj = (
@@ -204,6 +208,7 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
     )
 
     bcdpar.show_log_header()
+    kc = 0
     for k in range(bcdpar.itermax):
         for it in range(bcdpar.linmax):
             # linearization loop
@@ -217,7 +222,7 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
                     train: Train = blk['train']
                     # update gradient
                     Ak = blk['A']
-                    _Ax = sum(_vAx.values())
+
 
                     if bcdpar.dualobjtype == 1:
                         _c = (
@@ -246,12 +251,15 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
                     if (_v_sp > 0) and (bcdpar.sspbackend != 'grb'): _x = np.zeros(_c.shape)
 
                     _eps_fix_point[idx] = np.linalg.norm(xk[idx] - _x)
+                    _xnorm[idx] = np.linalg.norm(xk[idx]) ** 2
+                    _grad[idx] = np.linalg.norm(_c) ** 2
 
                     # update this block
                     xk[idx] = _x
-                    xv[idx] = _x if k == 0 else _x * 1 / (k + 1) + k / (k + 1) * xv[idx]
+                    xv[idx] = _x if kc == 0 else _x * 1 / (kc + 1) + kc / (kc + 1) * xv[idx]
                     _vAx[idx] = Ak @ _x
                     _vcx[idx] = _cx = (blk['c'].T @ _x).trace()
+                _Ax = sum(_vAx.values())
                 lobj = (
                         sum(_vcx.values())
                         + (lbd.T * (sum(_vAx.values()) - b)).sum()
@@ -266,6 +274,12 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
                     break
                 else:
                     tau /= tsig
+
+            relerr = sum(_eps_fix_point.values()) / max(1, sum(_xnorm[idx] for idx,_ in enumerate(blocks)))
+            if bcdpar.verbosity > 1:
+                print("{:01d} cx: {:.1f} al_func:{:+.2f} grad_func:{:+.2e} relerr:{:+.2f} int:{:01d}".format(
+                    it, sum(_vcx.values()), alobj, sum(_grad[idx] for idx,_ in enumerate(blocks)), relerr, idx_tau))
+
             # fixed-point eps
             if sum(_eps_fix_point.values()) < 1e-4:
                 break
@@ -279,20 +293,24 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
         # lobj = cx + (lbd.T * (_Ax - b)).sum() + (_nonnegative(_Ax - b) ** 2).sum() * rho / 2
         eps_fp = sum(_eps_fix_point.values())
         _log_line = "{:03d} {:.1e} {:+.2e} {:+.2e} {:+.2e} {:+.2e} {:+.3e} {:+.3e} {:+.3e} {:.2e} {:04d} {:04d}".format(
-            k, _iter_time, cb, cx, lobj, alobj, eps_pfeas, eps_fp, rho, tau, it + 1, idx_tau
+            k, _iter_time, r.cb, cx, lobj, alobj, eps_pfeas, eps_fp, rho, tau, it + 1, idx_tau
         )
         print(_log_line)
         if eps_pfeas == 0:
-            if cx < cb:
+            # restart
+            print(f":restarting epoch\n:kc = {kc}")
+            if cx < r.cb:
                 r.xb = copy.deepcopy(xk)
                 r.cb = cx
             rho = rho0
-            xk = copy.deepcopy(xv)
+            xk = copy.deepcopy([(1 - _xx) for _xx in xk])
             continue
 
         lbd = _nonnegative((_Ax - b) * rho + lbd)
         rho *= sigma
 
         bcdpar.iter += 1
+        kc += 1
+        if kc > 50: kc = 0
 
     return r
