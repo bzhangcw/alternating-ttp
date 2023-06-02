@@ -95,7 +95,7 @@ class SysParams(object):
         self.time_span = int(os.environ.get('time_span', 1080))
         self.iter_max = int(os.environ.get('iter_max', 100))
         self.up = int(os.environ.get('up', 0))
-        self.obj = int(os.environ.get('obj', 0))
+        self.obj = int(os.environ.get('obj', 1))
         self.log_problem_size(logger)
 
     def log_problem_size(self, logger):
@@ -182,6 +182,11 @@ class SubgradParam(object):
         self.norms = ([], [], [])  # l1-norm, l2-norm, infty-norm
         self.multipliers = ([], [], [])
         self.parse_environ()
+
+    def show(self):
+        logger.info(f"---            dual: {self.dual_method}")
+        logger.info(f"---          primal: {self.primal_heuristic_method}")
+        logger.info(f"--- primal_provider: {self.feasible_provider}")
 
 
 def from_train_path_to_train_order(train_list, method="dual"):

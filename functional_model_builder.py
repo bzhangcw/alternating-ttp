@@ -59,6 +59,7 @@ def create_neighborhood(v_station_after, t, interval):
 ##############################
 
 def optimize(model, zjv=None):
+    model.setParam("Method", 2)
     model.optimize()
     # todo, fix this.
     # import pandas as pd
@@ -104,7 +105,8 @@ def create_milp_model(obj_type=0):
             out_edges = v.out_edges()
 
             if v.index == tr._ig_s:
-                model.addConstr(quicksum(xe[e['name']] for e in out_edges) == s_arcs[tr.traNo],
+                model.addConstr(
+                    quicksum(xe[e['name']] for e in out_edges) == s_arcs[tr.traNo],
                                 name=f'start_arcs[{tr.traNo}]')
                 model.addConstr(s_arcs[tr.traNo] <= 1, name=f'sk_{(tr.traNo, *v["name"])}')
                 model.addConstr(
@@ -154,6 +156,7 @@ def create_milp_model(obj_type=0):
                 )
     if obj_type == 0:
         obj_expr = -quicksum(s_arcs.values())
+        model.setObjective(obj_expr, sense=GRB.MINIMIZE)
     elif obj_type == 1:
         # M = 1e+7
         # obj_expr = - quicksum(xe[e.index] * e['weight'] for e in g.es)  # + M * (1 - if_train_sel)
@@ -162,16 +165,15 @@ def create_milp_model(obj_type=0):
             # note xe are actually different for each train: j
             g: igraph.Graph = tr.subgraph
             xe = xes[tr.traNo]
-            obj_expr -= quicksum(e['weight'] * xe[e['name']] for e in g.es)
+            obj_expr += quicksum(e['weight'] * xe[e['name']] for e in g.es)
+        model.setObjective(obj_expr, sense=GRB.MAXIMIZE)
     else:
         raise ValueError(f"unsupported obj type, currently: {util.SysParams.OBJ_DESCRIPTION.values()}")
     # maximum number of trains, by add up z
-
-    model.setObjective(obj_expr, sense=GRB.MINIMIZE)
     model.setParam("LogToConsole", 1)
     model.setParam("Threads", 1)
 
-    return model, zjv
+    return model, zjv, xes
 
 
 def split_model(m: Model):

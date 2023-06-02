@@ -28,11 +28,11 @@ Anorm  = normest(subproblem(1).coupling);
 tau    = 1/(Anorm^2*rho0);
 kmax   = 1000;
 imax   = 1;
-
-headers = ["c'x", "lobj", "|Ax - b|", "error", "rho","tau","iter"];
-slots = ["%10s", "%10s", "%14s", "%8s", "%10s", "%9s","%5s"];
+tic
+headers = ["c'x","lobj","|Ax - b|","error","rho","tau","kl","t"];
+slots = ["%10s","%10s","%14s","%8s","%10s","%9s","%9s","%6s","%9s"];
 header = 'k';
-for j=1:7
+for j=1:8
     header=strcat(header, sprintf(slots(j), headers(j)));
 end
 header = strcat(header, '\n');
@@ -85,7 +85,7 @@ for k  = 1 : kmax
     end
 
     
-    
+    gtime=toc;
     Axb=Ax-b;
     pfeas  = norm(max(Axb,0));
 %    alpha  = 0.001;
@@ -97,10 +97,10 @@ for k  = 1 : kmax
     
     cx     = (model.obj)'*x;
     lobj   = cx+lambda'*Axb+rho*pfeas^2/2;
-    error  = norm(xk-x)/norm(xk);
+    error  = norm(xk-x)/(norm(xk)+1e-3);
     
-    fprintf("%+.2d %+.2e %+.2e, %+.3e %+.3e %+.3e  %.2d  %d\n", ...
-        k, cx, lobj, pfeas, error, rho,tau, iter);
+    fprintf("%+.2d %+.2e %+.2e, %+.3e %+.3e %+.3e %+.2e %.3d %.1e\n", ...
+        k,cx,lobj,pfeas,error,rho,tau,iter,gtime);
     if pfeas == 0 
         break;
     end
@@ -131,8 +131,8 @@ Anorm  = normest(subproblem(1).coupling);
 tau    = 1/(Anorm^2*rho0);
 kmax   = 1000;
 imax   = 10;
-
-headers = ["c'x", "lobj", "|Ax - b|", "error", "rho","tau","iter"];
+tic
+headers = ["c'x", "lobj", "|Ax - b|", "error", "rho","tau","kl"];
 slots = ["%10s", "%10s", "%14s", "%8s", "%10s", "%9s","%5s"];
 header = 'k';
 for j=1:7
@@ -184,7 +184,7 @@ for k  = 1 : kmax
             break;
         end
     end
-
+    gtime=toc;
       
     Axb=Ax-b;
     pfeas  = norm(max(Axb,0));
@@ -204,10 +204,10 @@ for k  = 1 : kmax
 
     cx     = (model.obj)'*x;
     lobj   = cx+lambda'*Axb+rho*pfeas^2/2;
-    error  = norm(xk-x)/norm(xk);
+    error  = norm(xk-x)/(norm(xk)+1e-3);
     
-    fprintf("%+.2d %+.2e %+.2e, %+.3e %+.3e %+.3e  %.2d  %d\n", ...
-        k, cx, lobj, pfeas, error, rho,tau, iter);
+    fprintf("%+.2d %+.2e %+.2e, %+.3e %+.3e %+.3e %+.2e %d %.1e\n", ...
+        k,cx,lobj,pfeas,error,rho,tau,iter,gtime);
     if pfeas == 0 
         break;
     end

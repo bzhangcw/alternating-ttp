@@ -3,7 +3,9 @@ clear;
 addpath(genpath(pwd));
 rng('default');
 %filename = 'data/ttp_100_29_720.mat';
-filename = 'data/ttp_50_29_300_2.mat';
+% filename = 'ttp_50_29_300_2.mat';
+% filename = '../../ttp_70_15_300.mat';
+filename = '../../ttp_50_29_300.mat';
 %filename = 'ttp_292_29_1080.mat';
 %filename = 'data/ttp_200_29_720.mat';
 %filename = 'data/ttp_150_29_1080.mat';
@@ -75,11 +77,11 @@ Funcollect=EvaluationFunc1;
 
 
 %% ALM-proxl
-% tic;
-% [x_l] = Funcollect.palm_l(subproblem,coupling,model);
-% t_almp = toc;
-%% ALM-original
 tic;
-[x,k] = Funcollect.palm_dual(subproblem,coupling,model);
-t_almo = toc;
+[x_l] = Funcollect.palm_l(subproblem,coupling,model);
+t_almp = toc;
+%% ALM-original
+% tic;
+% [x,k] = Funcollect.palm_dual(subproblem,coupling,model);
+% t_almo = toc;
 

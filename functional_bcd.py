@@ -13,6 +13,7 @@ functional interface module for bcd
 % - indefinite proximal BCD which includes an extrapolation step.
 % - restart utilities
 """
+import copy
 import functools
 from typing import Dict
 import time
@@ -101,8 +102,10 @@ class BCDParams(object):
         self.parse_environ()
 
     def show_log_header(self):
-        headers = ["k", "t", "c'x", "lobj", "|Ax - b|", "error", "rho", "tau", "iter"]
-        slots = ["{:^3s}", "{:^7s}", "{:^9s}", "{:^9s}", "{:^10s}", "{:^10s}", "{:^9s}", "{:^9s}", "{:4s}"]
+        headers = ["k", "t", "f*", "c'x", "L(λ)", "aL(λ)", "|Ax - b|", "error", "ρ", "τ", "kl", "kls"]
+        slots = ["{:^3s}", "{:^7s}", "{:^9s}", "{:^9s}", "{:^9s}", "{:^9s}", "{:^10s}", "{:^10s}", "{:^9s}", "{:^9s}",
+                 "{:4s}",
+                 "{:4s}"]
         _log_header = " ".join(slots).format(*headers)
         lt = _log_header.__len__()
         print("*" * lt)
@@ -128,6 +131,17 @@ def _nonnegative(x):
     return x * a
 
 
+class Result(object):
+    # last iterate
+    xk = None
+    cx = None
+    # best iterate
+    xb = None
+    cb = None
+    # average iterate
+    xv = None
+
+
 def optimize(bcdpar: BCDParams, mat_dict: Dict):
     """
 
@@ -143,21 +157,27 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
     blocks = mat_dict['trains']
     b = mat_dict['b']
     m, _ = b.shape
-    A = scipy.sparse.hstack([blk['A'] for idx, blk in enumerate(blocks)])
-    A1 = blocks[0]['A']
-    Anorm = scipy.sparse.linalg.norm(A1)
+    # A = scipy.sparse.hstack([blk['A'] for idx, blk in enumerate(blocks)])
+    # A1 = blocks[0]['A']
+    # Anorm = scipy.sparse.linalg.norm(A1)
+    # tau0 = 1 / (Anorm * rho)
     # Anorm = np.linalg.norm(A1)
 
     # alias
-    rho = 1e-2
-    tau = 1 / (Anorm * rho)
+    rho = rho0 = 1e-2
+    tau = tau0 = 1e-2
+    tsig = 1
     sigma = 1.1
-    xk = [np.zeros((blk['n'], 1)) for idx, blk in enumerate(blocks)]
+    cb = 1e6
+    cx = 1e6
+    np.random.seed(1)
+    xb = [np.zeros((blk['n'], 1)) for idx, blk in enumerate(blocks)]
+    xk = [np.random.random((blk['n'], 1)) for idx, blk in enumerate(blocks)]
+    xv = [np.zeros((blk['n'], 1)) for idx, blk in enumerate(blocks)]
     lbd = rho * np.zeros(b.shape)
+    r = Result()
+    r.cx, r.cb, r.xb, r.xv, r.xk = cx, cb, xb, xv, xk
     # logger
-
-    bcdpar.show_log_header()
-
     # - k: outer iteration num
     # - it: inner iteration num
     # - idx: 1-n block idx
@@ -169,48 +189,83 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
     # x_k - x_k* (fixed point error)
     _eps_fix_point = {idx: 0 for idx, blk in enumerate(blocks)}
     if bcdpar.sspbackend == 'grb':
+        print("creating models")
         for idx, blk in enumerate(blocks):
             train: Train = blk['train']
             _c = blk['c']
             blk['mx'] = train.create_shortest_path_model(blk)
+
+        print("creating models finished")
+
+    alobj = (
+            sum(_vcx.values())
+            + (lbd.T * (sum(_vAx.values()) - b)).sum()
+            + (_nonnegative(sum(_vAx.values()) - b) ** 2).sum() * rho / 2
+    )
+
+    bcdpar.show_log_header()
     for k in range(bcdpar.itermax):
         for it in range(bcdpar.linmax):
+            # linearization loop
             # idx: A[idx]@x[idx]
-            for idx, blk in enumerate(blocks):
-                train_no = blk['id']
-                train: Train = blk['train']
-                # update gradient
-                Ak = blk['A']
-                _Ax = sum(_vAx.values())
+            tau = tau0
+            for idx_tau in range(2):
+                alobjz = alobj
+                # for idx, blk in tqdm.tqdm(enumerate(blocks)):
+                for idx, blk in enumerate(blocks):
+                    train_no = blk['id']
+                    train: Train = blk['train']
+                    # update gradient
+                    Ak = blk['A']
+                    _Ax = sum(_vAx.values())
 
-                if bcdpar.dualobjtype == 1:
-                    _c = (blk['c'] + Ak.T @ (lbd + rho * _nonnegative(_Ax - Ak @ xk[idx] - b / 2)))
-                elif bcdpar.dualobjtype == 2:
-                    # todo, implement _c
-                    # _c = blk['c'] \
-                    #      + rho * Ak.T @ _nonnegative(_Ax - b + lbd / rho) \
-                    #      + (0.5 - xk[idx]) / tau
-                    pass
+                    if bcdpar.dualobjtype == 1:
+                        _c = (
+                                blk['c']
+                                + Ak.T @ (lbd + rho * _nonnegative(_Ax - Ak @ xk[idx] - b / 2))
+                                + (- xk[idx] + 0.5) / tau
+                        )
+                    elif bcdpar.dualobjtype == 2:
+                        # todo, implement _c
+                        # _c = blk['c'] \
+                        #      + rho * Ak.T @ _nonnegative(_Ax - b + lbd / rho) \
+                        #      + (0.5 - xk[idx]) / tau
+                        pass
+                    else:
+                        raise ValueError(f"cannot recognize type {bcdpar.dualobjtype}")
+
+                    # compute shortest path
+                    _x = train.vectorize_shortest_path(
+                        _c, blk=blk, backend=bcdpar.sspbackend, model_and_x=blk.get('mx')
+                    ).reshape(_c.shape)
+
+                    # Note the subproblem is not a strict shortest path problem
+                    #   you can choose not to visit any node
+                    # if it is solved by ssp, then accept if it has negative cost
+                    _v_sp = (_c.T @ _x).trace()
+                    if (_v_sp > 0) and (bcdpar.sspbackend != 'grb'): _x = np.zeros(_c.shape)
+
+                    _eps_fix_point[idx] = np.linalg.norm(xk[idx] - _x)
+
+                    # update this block
+                    xk[idx] = _x
+                    xv[idx] = _x if k == 0 else _x * 1 / (k + 1) + k / (k + 1) * xv[idx]
+                    _vAx[idx] = Ak @ _x
+                    _vcx[idx] = _cx = (blk['c'].T @ _x).trace()
+                lobj = (
+                        sum(_vcx.values())
+                        + (lbd.T * (sum(_vAx.values()) - b)).sum()
+                )
+                alobj = (
+                        lobj
+                        + (_nonnegative(sum(_vAx.values()) - b) ** 2).sum() * rho / 2
+                )
+
+                # do line search
+                if alobj - alobjz <= tau * sum(_eps_fix_point.values()):
+                    break
                 else:
-                    raise ValueError(f"cannot recognize type {bcdpar.dualobjtype}")
-
-                # compute shortest path
-                _x = train.vectorize_shortest_path(
-                    _c, blk=blk, backend=bcdpar.sspbackend, model_and_x=blk.get('mx')
-                ).reshape(_c.shape)
-                # accept or not
-                _v_sp = (_c.T @ _x).trace()
-                if _v_sp > 0:
-                    # do not select path
-                    _x = np.zeros(_c.shape)
-
-                _eps_fix_point[idx] = np.linalg.norm(xk[idx] - _x)
-
-                # update this block
-                xk[idx] = _x
-                _vAx[idx] = Ak @ _x
-                _vcx[idx] = _cx = (blk['c'].T @ _x).trace()
-
+                    tau /= tsig
             # fixed-point eps
             if sum(_eps_fix_point.values()) < 1e-4:
                 break
@@ -221,16 +276,23 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
         cx = sum(_vcx.values())
 
         # lobj = cx + (_nonnegative(_Ax - b + lbd / rho) ** 2).sum() * rho / 2 - np.linalg.norm(lbd) ** 2 / 2 / rho
-        lobj = cx + (lbd.T * (_Ax - b)).sum() + (_nonnegative(_Ax - b) ** 2).sum() * rho / 2
+        # lobj = cx + (lbd.T * (_Ax - b)).sum() + (_nonnegative(_Ax - b) ** 2).sum() * rho / 2
         eps_fp = sum(_eps_fix_point.values())
-        _log_line = "{:03d} {:.1e} {:+.2e} {:+.2e} {:+.3e} {:+.3e} {:+.3e} {:.2e} {:04d}".format(
-            k, _iter_time, cx, lobj, eps_pfeas, eps_fp, rho, tau, it + 1
+        _log_line = "{:03d} {:.1e} {:+.2e} {:+.2e} {:+.2e} {:+.2e} {:+.3e} {:+.3e} {:+.3e} {:.2e} {:04d} {:04d}".format(
+            k, _iter_time, cb, cx, lobj, alobj, eps_pfeas, eps_fp, rho, tau, it + 1, idx_tau
         )
         print(_log_line)
         if eps_pfeas == 0:
-            break
+            if cx < cb:
+                r.xb = copy.deepcopy(xk)
+                r.cb = cx
+            rho = rho0
+            xk = copy.deepcopy(xv)
+            continue
 
         lbd = _nonnegative((_Ax - b) * rho + lbd)
         rho *= sigma
 
         bcdpar.iter += 1
+
+    return r
