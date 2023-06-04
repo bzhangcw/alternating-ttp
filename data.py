@@ -58,6 +58,8 @@ def read_intervals(path):
     safe_int = df.to_dict()
     safe_int_df = df
 
+    return safe_int
+
 
 def read_station(path, size):
     global miles, v_station_list, station_list, station_name_map
@@ -203,11 +205,11 @@ def setup(params_sys: SysParams):
         read_train('raw_data/7-lineplan-up.xlsx', params_sys.train_size, params_sys.time_span)
     else:
         read_train('raw_data/6-lineplan-down.xlsx', params_sys.train_size, params_sys.time_span)
-    read_intervals('raw_data/5-safe-intervals.xlsx')
+    safe_int = read_intervals('raw_data/5-safe-intervals.xlsx')
     logger.info("reading finish")
 
     for tr in train_list:
         tr.create_subgraph(sec_times_all[tr.speed], params_sys.time_span)
     logger.info("graph initialization finish")
 
-    return params_sys
+    return params_sys, safe_int

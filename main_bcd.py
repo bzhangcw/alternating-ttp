@@ -19,7 +19,8 @@ if __name__ == '__main__':
     params_subgrad.parse_environ()
     params_bcd.parse_environ()
 
-    ms.setup(params_sys)
+    _, safe_int = ms.setup(params_sys)
+    params_bcd.safe_int = safe_int
 
     data_name = f"ttp_{params_sys.train_size}_{params_sys.station_size}_{params_sys.time_span}"
     try:

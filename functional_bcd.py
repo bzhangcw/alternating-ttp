@@ -311,8 +311,126 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
         lbd = _nonnegative((_Ax - b) * rho + lbd)
         rho *= sigma
 
+        train_list = [blk['train'] for blk in blocks]
+        for tr, opt_lr in zip(train_list, _vcx):
+            tr.opt_cost_LR = opt_lr
+        pri_best_count, pri_best_obj = primal_heuristic(train_list, bcdpar.safe_int, target='obj')
+        print("primal heuristic: best count: {}, best obj: {}".format(pri_best_count, pri_best_obj))
+
         bcdpar.iter += 1
         kc += 1
-        if kc > 50: kc = 0
+        if kc > 50:
+            kc = 0
 
     return r
+
+
+def primal_heuristic(
+        train_list,
+        safe_int,
+        target='obj',
+):
+    """
+    produce path: iterable of (station, time)
+
+    Args:
+        method: the name of primal feasible algorithm.
+    """
+    iter_max = 1
+
+    best_count = count = -1
+    best_obj = -1e6
+    new_train_order = sorted(
+        train_list, key=lambda tr: (tr.standard, tr.opt_cost_LR), reverse=True
+    )
+
+    for j in range(iter_max):
+        path_cost_feasible = 0
+        occupied_nodes = {}
+        occupied_arcs = defaultdict(lambda: set())
+        incompatible_arcs = set()
+        count = 0
+        not_feasible_trains = []
+        train_order = new_train_order
+
+        for idx, train in enumerate(train_order):
+            train.update_primal_graph(
+                occupied_nodes, occupied_arcs, incompatible_arcs, safe_int
+            )
+            # the heuristic only works for 1, but we may summarize using 0
+            train.feasible_path, train.feasible_cost = train.shortest_path_primal(
+                objtype=1
+            )
+            if not train.is_feasible:
+                # path_cost_feasible += train.max_edge_weight * (len(train.staList) - 1)
+                not_feasible_trains.append((idx, train.traNo))
+                continue
+            else:
+                count += 1
+            _this_occupied_nodes = get_occupied_nodes(train)
+            occupied_nodes.update(_this_occupied_nodes)
+            (
+                _this_occupied_arcs,
+                _this_new_incompatible_arcs,
+            ) = get_occupied_arcs_and_clique(train.feasible_path)
+            for k, v in _this_occupied_arcs.items():
+                occupied_arcs[k].add(v)
+            incompatible_arcs.update(_this_new_incompatible_arcs)
+            path_cost_feasible += train.feasible_cost
+
+        if (count > best_count) and (target == 'count'):
+            print("better feasible number: {}".format(count))
+            best_count = count
+            best_obj = path_cost_feasible
+            if best_count == len(train_list):
+                print("all trains in the graph!")
+                break
+        elif (path_cost_feasible > best_obj) and (target == 'obj'):
+            best_obj = path_cost_feasible
+            best_count = count
+        else:
+            first_train_idx = not_feasible_trains[0][0]
+            train_order.insert(0, train_order.pop(first_train_idx))
+            print(
+                "only feasible number: {}, incumbent: {}".format(count, best_count)
+            )
+
+    print(f"seq maximum cardinality: {best_count}, obj: {-best_obj}")
+
+    #################################################################################
+    # SUMMARIZATION
+
+    return best_count, -best_obj
+
+
+def get_occupied_nodes(train):
+    _centers = train.feasible_path[1:-1]
+    _nodes = {}
+    for vs, t in _centers:
+        _nodes[vs, t] = train.v_sta_type[vs]
+
+    return _nodes
+
+
+def get_occupied_arcs_and_clique(feasible_path):
+    _this_occupied_arcs = {
+        (i, j): (t1, t2)
+        for (i, t1), (j, t2) in zip(feasible_path[1:-2], feasible_path[2:-1])
+        if i[0] != j[1]  # if not same station
+    }
+    # edges starting later yet arriving earlier
+    _this_new_incompatible_arcs = {
+        ((i, st), (j, et))
+        for (i, j), (t1, t2) in _this_occupied_arcs.items()
+        for st in range(t1 + 1, t2)
+        for et in range(st, t2)
+    }
+    # edges starting earlier yet arriving later
+    _this_new_incompatible_arcs.update(
+        ((i, st), (j, et))
+        for (i, j), (t1, t2) in _this_occupied_arcs.items()
+        for st in range(t1 - 10, t1)
+        for et in range(t2, t2 + 10)
+    )
+
+    return _this_occupied_arcs, _this_new_incompatible_arcs
