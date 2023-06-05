@@ -314,7 +314,7 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
         train_list = [blk['train'] for blk in blocks]
         for tr, opt_lr in zip(train_list, _vcx):
             tr.opt_cost_LR = opt_lr
-        pri_best_count, pri_best_obj = primal_heuristic(train_list, bcdpar.safe_int, target='obj')
+        pri_best_count, pri_best_obj, pri_best_xks = primal_heuristic(train_list, bcdpar.safe_int, blocks, target='obj')
         print("primal heuristic: best count: {}, best obj: {}".format(pri_best_count, pri_best_obj))
 
         bcdpar.iter += 1
@@ -328,6 +328,7 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
 def primal_heuristic(
         train_list,
         safe_int,
+        blocks,
         target='obj',
 ):
     """
@@ -341,7 +342,7 @@ def primal_heuristic(
     best_count = count = -1
     best_obj = -1e6
     new_train_order = sorted(
-        train_list, key=lambda tr: (tr.standard, tr.opt_cost_LR), reverse=True
+        zip(train_list, blocks), key=lambda pair: (pair[0].standard, pair[0].opt_cost_LR), reverse=True
     )
 
     for j in range(iter_max):
@@ -353,14 +354,21 @@ def primal_heuristic(
         not_feasible_trains = []
         train_order = new_train_order
 
-        for idx, train in enumerate(train_order):
+        xks = {}
+        for idx, (train, blk) in enumerate(train_order):
+            assert train.traNo == blk['id']
+            train.backend = 2
             train.update_primal_graph(
-                occupied_nodes, occupied_arcs, incompatible_arcs, safe_int
+                occupied_nodes, occupied_arcs, incompatible_arcs, safe_int, model_and_x=blk['mx']
             )
             # the heuristic only works for 1, but we may summarize using 0
-            train.feasible_path, train.feasible_cost = train.shortest_path_primal(
-                objtype=1
+            _x = train.vectorize_shortest_path(
+                blk['c'], model_and_x=blk['mx']
             )
+            xks[blk['id']] = _x
+            train.is_feasible = sum(_x) > 0.5
+            train.feasible_cost = blk['c'].T @ _x
+            train.feasible_path = get_path_from_vec(_x, train)
             if not train.is_feasible:
                 # path_cost_feasible += train.max_edge_weight * (len(train.staList) - 1)
                 not_feasible_trains.append((idx, train.traNo))
@@ -382,11 +390,15 @@ def primal_heuristic(
             print("better feasible number: {}".format(count))
             best_count = count
             best_obj = path_cost_feasible
+            best_xks = xks.copy()
+            assert best_obj == sum(blk['c'].T @ xks[blk['id']] for blk in blocks)
             if best_count == len(train_list):
                 print("all trains in the graph!")
                 break
         elif (path_cost_feasible > best_obj) and (target == 'obj'):
             best_obj = path_cost_feasible
+            best_xks = xks.copy()
+            assert best_obj == sum(blk['c'].T @ xks[blk['id']] for blk in blocks)
             best_count = count
         else:
             first_train_idx = not_feasible_trains[0][0]
@@ -395,12 +407,12 @@ def primal_heuristic(
                 "only feasible number: {}, incumbent: {}".format(count, best_count)
             )
 
-    print(f"seq maximum cardinality: {best_count}, obj: {-best_obj}")
+    # print(f"seq maximum cardinality: {best_count}, obj: {best_obj}")
 
     #################################################################################
     # SUMMARIZATION
 
-    return best_count, -best_obj
+    return best_count, best_obj, best_xks
 
 
 def get_occupied_nodes(train):
@@ -434,3 +446,17 @@ def get_occupied_arcs_and_clique(feasible_path):
     )
 
     return _this_occupied_arcs, _this_new_incompatible_arcs
+
+
+def get_path_from_vec(x, tr):
+    # x is a vector of 0 and 1, and it's created by the shortest path algorithm in the graph
+    # the index of x is the index of the edge in the graph
+    # the value of x is 1 if the edge is in the path, otherwise 0
+    # the path is a list of (station, time)
+    path = [('s_', -1)]
+    assert len(x) == len(tr.subgraph.es)
+    for i, _e in enumerate(x):
+        if _e > 0.5:
+            i, o = tr.subgraph.es[i]['name']  # FIXME
+            path.append(o)
+    return path

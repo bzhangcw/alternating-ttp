@@ -197,6 +197,8 @@ class Train(object):
             self.update_primal_graph_nx(*args, **kwargs)
         elif self.backend == 1:
             self.update_primal_graph_ig(*args, **kwargs)
+        elif self.backend == 2:  # FIXME
+            self.update_primal_graph_grb(*args, **kwargs)
         else:
             raise ValueError(f"backend {self.backend} is not supported")
 
@@ -446,6 +448,58 @@ class Train(object):
         _ig_all_nodes = [
             self._ig_nodes_id[n] for n in _all_nodes if n in self._ig_nodes
         ]
+        self.subgraph_primal.delete_vertices(_ig_all_nodes)
+        self._ig_t_primal = self.subgraph_primal.vcount() - 1
+
+    def update_primal_graph_grb(self, *args, model_and_x=None, **kwargs):
+        """
+        use occupied nodes to create a updated primal graph
+            to compute primal feasible solutions
+        """
+        self.subgraph_primal = self.subgraph.copy()
+        occupied_nodes, arcs, incompatible_arcs, _safe_int = args
+
+        if model_and_x is None:
+            raise ValueError("create grb model first!")
+        model, x = model_and_x
+        # set all var ub = 1
+        x.setAttr(GRB.Attr.UB, 1)
+        # step 1,
+        # you should remove the union of neighborhood of each node
+        # i. get neighborhood size
+        radius = {}
+        for (i, t), c in occupied_nodes.items():
+            _type_affix_after = c + self.v_sta_type.get(i, "%")
+            _type_affix_before = self.v_sta_type.get(i, "%") + c
+            radius_after = (
+                _safe_int[_type_affix_after][i.strip("_"), self.speed]
+                if _type_affix_after in _safe_int
+                else 0
+            )
+            radius_before = (
+                _safe_int[_type_affix_before][i.strip("_"), self.speed]
+                if _type_affix_before in _safe_int
+                else 0
+            )  # todo: use speed of rear train
+            radius[i, t] = (radius_before, radius_after)
+        # ii. then remove nodes defined by radius
+        _all_nodes = (
+            (i, t + dlt)
+            for (i, t), (r_b, r_a) in radius.items()
+            for dlt in range(-r_b + 1, r_a)
+        )
+        _ig_all_nodes = [
+            self._ig_nodes_id[n] for n in _all_nodes if n in self._ig_nodes
+        ]
+
+        for v_id in _ig_all_nodes:
+            v = self.subgraph_primal.vs[v_id]
+            in_es = v.in_edges()
+            out_es = v.out_edges()
+
+            for e in in_es + out_es:
+                x[e.index].ub = 0
+
         self.subgraph_primal.delete_vertices(_ig_all_nodes)
         self._ig_t_primal = self.subgraph_primal.vcount() - 1
 

@@ -35,6 +35,7 @@ if __name__ == '__main__':
         with open(f"{data_name}.pk", 'wb') as f:
             pk.dump(mat_dict, f)
 
+    params_bcd.sspbackend = "grb"  # FIXME
     r = bcd.optimize(bcdpar=params_bcd, mat_dict=mat_dict)
 
     # sanity check
