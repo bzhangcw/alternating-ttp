@@ -322,7 +322,7 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
         if kc > 50:
             kc = 0
 
-    return r
+    return r,pri_best_xks
 
 
 def primal_heuristic(

@@ -173,7 +173,7 @@ def create_milp_model(obj_type=0):
     model.setParam("LogToConsole", 1)
     model.setParam("Threads", 1)
 
-    return model, zjv, xes
+    return model, zjv, xes, s_arcs
 
 
 def split_model(m: Model):

@@ -500,7 +500,7 @@ class Train(object):
             for e in in_es + out_es:
                 x[e.index].ub = 0
 
-        self.subgraph_primal.delete_vertices(_ig_all_nodes)
+        # self.subgraph_primal.delete_vertices(_ig_all_nodes)
         self._ig_t_primal = self.subgraph_primal.vcount() - 1
 
     def shortest_path_ig(self, option="dual", objtype=1):
