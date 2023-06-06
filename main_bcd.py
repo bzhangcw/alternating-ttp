@@ -39,7 +39,7 @@ if __name__ == '__main__':
 
     params_bcd.sspbackend = "grb"  # FIXME
     params_bcd.itermax = 50  # FIXME
-    r,pri_best_xks = bcd.optimize(bcdpar=params_bcd, mat_dict=mat_dict)
+    r, pri_best_xks = bcd.optimize(bcdpar=params_bcd, mat_dict=mat_dict)
 
     # sanity check
     model, zjv, xes, s_arcs = create_milp_model(obj_type=params_sys.obj)
@@ -56,7 +56,6 @@ if __name__ == '__main__':
             xes[tr.traNo][e['name']].setAttr(GRB.Attr.LB, pri_best_xks[tr.traNo][e.index])
             xes[tr.traNo][e['name']].setAttr(GRB.Attr.UB, pri_best_xks[tr.traNo][e.index])
 
-        break
     model.optimize()
     fx = model.objval
 
