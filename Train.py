@@ -495,8 +495,10 @@ class Train(object):
         model, x = model_and_x
 
         Ak = blk['A']
-        c = model.addConstr(Ak @ x <= b_bar.flatten())
+        cons = model.addConstr(Ak @ x <= b_bar.flatten())
 
+        model_sense = model.ModelSense
+        model.ModelSense = -1
         model.optimize()
 
         if model.Status == GRB.OPTIMAL:
@@ -508,7 +510,8 @@ class Train(object):
             _x = None
             optimal = False
 
-        model.remove(c)
+        model.remove(cons)
+        model.ModelSense = model_sense
 
         return _x, optimal, b_bar
 

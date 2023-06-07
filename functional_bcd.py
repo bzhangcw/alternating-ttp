@@ -186,7 +186,7 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
     #       it may not be the train no
     # A_k x_k
     _vAx = {idx: blk['A'] @ xk[idx] for idx, blk in enumerate(blocks)}
-    _Ax  = sum(_vAx.values())
+    _Ax = sum(_vAx.values())
     # c_k x_k
     _vcx = {idx: (blk['c'].T @ xk[idx]).trace() for idx, blk in enumerate(blocks)}
     # x_k - x_k* (fixed point error)
@@ -209,6 +209,9 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
 
     bcdpar.show_log_header()
     kc = 0
+
+    bst_pri_best_obj = 1e+10
+    bst_pri_best_xks = None
     for k in range(bcdpar.itermax):
         for it in range(bcdpar.linmax):
             # linearization loop
@@ -222,7 +225,6 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
                     train: Train = blk['train']
                     # update gradient
                     Ak = blk['A']
-
 
                     if bcdpar.dualobjtype == 1:
                         _c = (
@@ -275,10 +277,10 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
                 else:
                     tau /= tsig
 
-            relerr = sum(_eps_fix_point.values()) / max(1, sum(_xnorm[idx] for idx,_ in enumerate(blocks)))
+            relerr = sum(_eps_fix_point.values()) / max(1, sum(_xnorm[idx] for idx, _ in enumerate(blocks)))
             if bcdpar.verbosity > 1:
                 print("{:01d} cx: {:.1f} al_func:{:+.2f} grad_func:{:+.2e} relerr:{:+.2f} int:{:01d}".format(
-                    it, sum(_vcx.values()), alobj, sum(_grad[idx] for idx,_ in enumerate(blocks)), relerr, idx_tau))
+                    it, sum(_vcx.values()), alobj, sum(_grad[idx] for idx, _ in enumerate(blocks)), relerr, idx_tau))
 
             # fixed-point eps
             if sum(_eps_fix_point.values()) < 1e-4:
@@ -312,17 +314,20 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
         rho *= sigma
 
         train_list = [blk['train'] for blk in blocks]
-        for tr, opt_lr in zip(train_list, _vcx):
+        for tr, opt_lr in zip(train_list, _vcx.values()):
             tr.opt_cost_LR = opt_lr
         pri_best_count, pri_best_obj, pri_best_xks = primal_heuristic(train_list, b.copy(), blocks, target='obj')
         print("primal heuristic: best count: {}, best obj: {}".format(pri_best_count, pri_best_obj))
+        if bst_pri_best_obj > pri_best_obj:
+            bst_pri_best_xks = pri_best_xks
+            bst_pri_best_obj = pri_best_obj
 
         bcdpar.iter += 1
         kc += 1
         if kc > 50:
             kc = 0
 
-    return r,pri_best_xks
+    return r, bst_pri_best_xks
 
 
 def primal_heuristic(
@@ -337,39 +342,50 @@ def primal_heuristic(
     Args:
         method: the name of primal feasible algorithm.
     """
-    iter_max = 1
+    iter_max = 3
 
     best_count = count = -1
     best_obj = 1e6
-    new_train_order = sorted(
+    train_order = sorted(
         zip(train_list, blocks), key=lambda pair: (pair[0].standard, pair[0].opt_cost_LR), reverse=True
     )
 
     for j in range(iter_max):
         path_cost_feasible = 0
         count = 0
-        train_order = new_train_order
+        inf_trs = []
+        feas4all = True
 
         xks = {}
-        b_bar = b
+        b_bar = b.copy()
         for idx, (train, blk) in enumerate(train_order):
             assert train.traNo == blk['id']
             # the heuristic only works for 1, but we may summarize using 0
             _x, optimal, b_bar = train.vectorize_heur_grb(
                 blk, b_bar, model_and_x=blk['mx']
             )
-            train.is_feasible = optimal
-            if optimal:
-                xks[blk['id']] = _x
-                train.feasible_cost = blk['c'].T @ _x
-                train.feasible_path = get_path_from_vec(_x, train)
-            if not train.is_feasible:
-                # path_cost_feasible += train.max_edge_weight * (len(train.staList) - 1)
-                continue
+
+            xks[blk['id']] = _x
+            train.feasible_cost = blk['c'].T @ _x
+            train.feasible_path = get_path_from_vec(_x, train)
+            # print("Train {}: {}".format(train.traNo, train.feasible_path))
+            if _x.sum() > 0.5:
+                train.is_feasible = True
             else:
+                # not feasible, so put this tr, blk to the first of train_order
+                inf_trs.append(idx)
+                feas4all = False
+
+            if train.is_feasible:
                 count += 1
 
             path_cost_feasible += train.feasible_cost
+
+        if not feas4all:
+            # put all infeasible trs to the first
+            feas_trs = [idx for idx in range(len(train_order)) if idx not in inf_trs]
+            new_idx = inf_trs + feas_trs
+            train_order = [train_order[idx] for idx in new_idx]
 
         if (count > best_count) and (target == 'count'):
             print("better feasible number: {}".format(count))
