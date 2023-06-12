@@ -248,7 +248,7 @@ class Train(object):
             -1 if _s == self.source else 0 for (_s, _t), v in self._ig_edges.items()
         )
         # todo, find a proper cost
-        _weight = list(11.1 for _ in self._ig_edges)
+        _weight = list(11.1 if s != 's_' else 1e3 for (s, t), _ in self._ig_edges)
         _name = list(self._ig_edges.keys())
         self.subgraph = ig.Graph(
             directed=True,
@@ -514,7 +514,7 @@ class Train(object):
 
         model.remove(cons)
         model.ModelSense = model_sense
-
+        model.update()
         return _x, optimal, b_bar
 
     def shortest_path_ig(self, option="dual", objtype=1):

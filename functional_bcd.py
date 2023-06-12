@@ -142,7 +142,7 @@ class BCDParams(object):
             "{:4s}",
             "{:4s}",
         ]
-        _log_header = " ".join(slots).format(*headers)
+        self._log_header = _log_header = " ".join(slots).format(*headers)
         lt = _log_header.__len__()
         print("*" * lt)
         print(("{:^" + f"{lt}" + "}").format("BCD for MILP"))
@@ -243,9 +243,9 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
         print("creating models finished")
 
     alobj = (
-        sum(_vcx.values())
-        + (lbd.T * (sum(_vAx.values()) - b)).sum()
-        + (_nonnegative(sum(_vAx.values()) - b) ** 2).sum() * rho / 2
+            sum(_vcx.values())
+            + (lbd.T @ (sum(_vAx.values()) - b)).sum()
+            + (_nonnegative(sum(_vAx.values()) - b) ** 2).sum() * rho / 2
     )
 
     bcdpar.show_log_header()
@@ -278,14 +278,14 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
             # once the linearization finished,
             # run lagrangian relaxation to find a LB
             ######################################################
-            _lb, *_ = lagrangian_relax(bcdpar, blocks, lbd, b)
+            _lb, *_ = lagrangian_relax(bcdpar, blocks, lbd, mat_dict["b"])
             if _lb > lobj:
                 lobj = _lb
 
             ######################################################
             # the bcd k-th iteration
             ######################################################
-            it, idx_tau, *_ = block_coord_descent(*args)
+            it, idx_tau, alobj, *_ = block_coord_descent(*args)
 
             _iter_time = time.time() - start
             _Ax = sum(_vAx.values())
@@ -296,23 +296,27 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
             # lobj = cx + (_nonnegative(_Ax - b + lbd / rho) ** 2).sum() * rho / 2 - np.linalg.norm(lbd) ** 2 / 2 / rho
             # lobj = cx + (lbd.T * (_Ax - b)).sum() + (_nonnegative(_Ax - b) ** 2).sum() * rho / 2
             eps_fp = sum(_eps_fix_point.values())
+
+
             ######################################################
             # primal heuristics
             ######################################################
-            train_list = [blk["train"] for blk in blocks]
-            for tr, opt_lr in zip(train_list, _vcx.values()):
-                tr.opt_cost_LR = opt_lr
-            pri_best_count, pri_best_obj, pri_best_xks = primal_heuristic(
-                train_list, b.copy(), blocks, target="obj"
-            )
-            print(
-                "       ⎣primal heuristic: best count: {}, best obj: {}".format(
-                    pri_best_count, pri_best_obj
+            bool_use_primal = 0
+            if bool_use_primal:
+                train_list = [blk["train"] for blk in blocks]
+                for tr, opt_lr in zip(train_list, _vcx.values()):
+                    tr.opt_cost_LR = opt_lr
+                pri_best_count, pri_best_obj, pri_best_xks = primal_heuristic(
+                    train_list, b.copy(), blocks, target="obj"
                 )
-            )
-            if r.cb > pri_best_obj:
-                r.xb = pri_best_xks
-                r.cb = pri_best_obj
+                print(
+                    "       ⎣primal heuristic: best count: {}, best obj: {}".format(
+                        pri_best_count, pri_best_obj
+                    )
+                )
+                if r.cb > pri_best_obj:
+                    r.xb = pri_best_xks
+                    r.cb = pri_best_obj
 
             _log_line = "{:03d} {:.1e} {:+.2e} {:+.2e} {:+.2e} {:+.2e} {:+.3e} {:+.3e} {:+.3e} {:.2e} {:04d} {:04d}".format(
                 k,
@@ -338,10 +342,13 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
             ######################################################
             if eps_pfeas == 0:
                 print(f":restarting epoch\n:kc = {kc}")
-
+                print(bcdpar._log_header)
                 rho = rho0
+                if cx <= r.cb:
+                    r.cb = cx
+                    r.xb = {blk['train'].traNo: xk[idx] for idx, blk in enumerate(blocks)}
+                # primal restart at an acc mean
                 xk = copy.deepcopy([(1 - _xx) for _xx in xv])
-
                 continue
 
             lbd = _nonnegative((_Ax - b) * rho + lbd)
@@ -352,8 +359,9 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
                 kc = 0
         except KeyboardInterrupt as e:
             print("terminated early")
-            return r, r.xb
-
+            break
+    print(bcdpar._log_header)
+    print(_log_line)
     return r, r.xb
 
 
@@ -399,9 +407,9 @@ def block_coord_descent(*args):
                     # this is not ADMM
                     _Ax = sum(_vAx.values())
                     _c = (
-                        blk["c"]
-                        + Ak.T @ (lbd + rho * _nonnegative(_Ax - Ak @ xk[idx] - b / 2))
-                        + (-xk[idx] + 0.5) / tau
+                            blk["c"]
+                            + Ak.T @ (lbd + rho * _nonnegative(_Ax - Ak @ xk[idx] - b / 2))
+                            + (-xk[idx] + 0.5) / tau
                     )
                 elif bcdpar.dualobjtype == 2:
                     # todo, implement _c
@@ -434,7 +442,7 @@ def block_coord_descent(*args):
                 _vAx[idx] = Ak @ _x
                 _vcx[idx] = _cx = (blk["c"].T @ _x).trace()
 
-            lobj = sum(_vcx.values()) + (lbd.T * (sum(_vAx.values()) - b)).sum()
+            lobj = sum(_vcx.values()) + (lbd.T @ (sum(_vAx.values()) - b)).sum()
             alobj = lobj + (_nonnegative(sum(_vAx.values()) - b) ** 2).sum() * rho / 2
 
             if bcdpar.verbosity > 1:
@@ -462,7 +470,7 @@ def block_coord_descent(*args):
         if sum(_eps_fix_point.values()) < 1e-4:
             break
 
-    return it, idx_tau
+    return it, idx_tau, alobj
 
 
 def lagrangian_relax(bcdpar, blocks, lbd, b):
@@ -487,10 +495,10 @@ def lagrangian_relax(bcdpar, blocks, lbd, b):
 
 
 def primal_heuristic(
-    train_list,
-    b,
-    blocks,
-    target="obj",
+        train_list,
+        b,
+        blocks,
+        target="obj",
 ):
     """
     produce path: iterable of (station, time)
@@ -551,8 +559,8 @@ def primal_heuristic(
             best_obj = path_cost_feasible
             best_xks = xks.copy()
             assert (
-                abs(best_obj - sum(blk["c"].T @ xks[blk["id"]] for blk in blocks))
-                < 1e-2
+                    abs(best_obj - sum(blk["c"].T @ xks[blk["id"]] for blk in blocks))
+                    < 1e-2
             )
             if best_count == len(train_list):
                 print("     all trains in the graph!")
@@ -561,8 +569,8 @@ def primal_heuristic(
             best_obj = path_cost_feasible
             best_xks = xks.copy()
             assert (
-                abs(best_obj - sum(blk["c"].T @ xks[blk["id"]] for blk in blocks))
-                < 1e-2
+                    abs(best_obj - sum(blk["c"].T @ xks[blk["id"]] for blk in blocks))
+                    < 1e-2
             )
             best_count = count
         else:
