@@ -301,7 +301,7 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
             ######################################################
             # primal heuristics
             ######################################################
-            bool_use_primal = 0
+            bool_use_primal = 1
             if bool_use_primal:
                 train_list = [blk["train"] for blk in blocks]
                 for tr, opt_lr in zip(train_list, _vcx.values()):
