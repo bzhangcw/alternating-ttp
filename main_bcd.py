@@ -24,7 +24,11 @@ if __name__ == '__main__':
     _, safe_int = ms.setup(params_sys)
     params_bcd.safe_int = safe_int
 
-    data_name = f"ttp_{params_sys.train_size}_{params_sys.station_size}_{params_sys.time_span}"
+    # temporary path
+    tmp = "./tmp"
+    if not os.path.exists("./tmp/"):
+        os.mkdir("./tmp")
+    data_name = f"{tmp}/ttp_{params_sys.train_size}_{params_sys.station_size}_{params_sys.time_span}"
     try:
         mat_dict = pk.load(open(f"{data_name}.pk", 'rb'))
         print("loaded a generated matlab style dict")
@@ -38,7 +42,6 @@ if __name__ == '__main__':
             pk.dump(mat_dict, f)
 
     params_bcd.sspbackend = "grb"  # FIXME
-    params_bcd.itermax = 50  # FIXME
     r, pri_best_xks = bcd.optimize(bcdpar=params_bcd, mat_dict=mat_dict)
 
     # sanity check

@@ -30,13 +30,13 @@ _logger.setLevel(logging.DEBUG)
 # for departure, ...         to outbound,
 # for passing, does not matter.
 bool_affix_safe_int_map = {
-    'aa': (0, 0),  # 0 - inbound, 1 - outbound
-    'ap': (0, 0),
-    'ss': (1, 1),
-    'sp': (1, 1),
-    'pa': (0, 0),
-    'ps': (1, 1),
-    'pp': (0, 0),
+    "aa": (0, 0),  # 0 - inbound, 1 - outbound
+    "ap": (0, 0),
+    "ss": (1, 1),
+    "sp": (1, 1),
+    "pa": (0, 0),
+    "ps": (1, 1),
+    "pp": (0, 0),
 }
 
 
@@ -57,6 +57,7 @@ def create_neighborhood(v_station_after, t, interval):
 ##############################
 # all-in-one milp model
 ##############################
+
 
 def optimize(model, zjv=None):
     model.setParam("Method", 2)
@@ -83,48 +84,70 @@ def create_milp_model(obj_type=0):
     model = Model("quadratic-proximal-ssp")
 
     univ_nodes = tuplelist(
-        set(v['name'] for tr in ms.train_list for v in tr.subgraph.vs)
+        set(v["name"] for tr in ms.train_list for v in tr.subgraph.vs)
     )
     # zjv[j, v]
     zjv = model.addVars(
-        ((tr.traNo, *v['name']) for tr in ms.train_list for v in tr.subgraph.vs),
-        lb=0, ub=1.0, name='zjv'
+        ((tr.traNo, *v["name"]) for tr in ms.train_list for v in tr.subgraph.vs),
+        lb=0,
+        ub=1.0,
+        name="zjv",
     )
     # starting arcs
     s_arcs = model.addVars(
-        (tr.traNo for tr in ms.train_list), vtype=GRB.BINARY, name='s_arcs'
+        (tr.traNo for tr in ms.train_list), vtype=GRB.BINARY, name="s_arcs"
     )
     xes = {}
     for tr in tqdm.tqdm(ms.train_list):
         # note xe are actually different for each train: j
         g = tr.subgraph
-        xes[tr.traNo] = xe = model.addVars((e['name'] for e in g.es), lb=0.0, ub=1.0, vtype=GRB.BINARY,
-                                           name=f'e@{tr.traNo}')
+        xes[tr.traNo] = xe = model.addVars(
+            (e["name"] for e in g.es),
+            lb=0.0,
+            ub=1.0,
+            vtype=GRB.BINARY,
+            name=f"e@{tr.traNo}",
+        )
         for v in g.vs:
             in_edges = v.in_edges()
             out_edges = v.out_edges()
 
             if v.index == tr._ig_s:
                 model.addConstr(
-                    quicksum(xe[e['name']] for e in out_edges) == s_arcs[tr.traNo],
-                                name=f'start_arcs[{tr.traNo}]')
-                model.addConstr(s_arcs[tr.traNo] <= 1, name=f'sk_{(tr.traNo, *v["name"])}')
+                    quicksum(xe[e["name"]] for e in out_edges) == s_arcs[tr.traNo],
+                    name=f"start_arcs[{tr.traNo}]",
+                )
                 model.addConstr(
-                    quicksum(xe[e['name']] for e in out_edges) == zjv[(tr.traNo, *v['name'])],
-                    name=f'zjv{(tr.traNo, *v["name"])}'
+                    s_arcs[tr.traNo] <= 1, name=f'sk_{(tr.traNo, *v["name"])}'
+                )
+                model.addConstr(
+                    quicksum(xe[e["name"]] for e in out_edges)
+                    == zjv[(tr.traNo, *v["name"])],
+                    name=f'zjv{(tr.traNo, *v["name"])}',
                 )
                 continue
             if v.index == tr._ig_t:
-                model.addConstr(quicksum(xe[e['name']] for e in in_edges) <= 1, name=f'sk_{(tr.traNo, *v["name"])}')
                 model.addConstr(
-                    quicksum(xe[e['name']] for e in in_edges) == zjv[(tr.traNo, *v['name'])],
-                    name=f'zjv{(tr.traNo, *v["name"])}'
+                    quicksum(xe[e["name"]] for e in in_edges) <= 1,
+                    name=f'sk_{(tr.traNo, *v["name"])}',
+                )
+                model.addConstr(
+                    quicksum(xe[e["name"]] for e in in_edges)
+                    == zjv[(tr.traNo, *v["name"])],
+                    name=f'zjv{(tr.traNo, *v["name"])}',
                 )
                 continue
-            model.addConstr(quicksum(xe[e['name']] for e in in_edges) - quicksum(xe[e['name']] for e in out_edges) == 0,
-                            name=f'sk_{(tr.traNo, *v["name"])}')
-            model.addConstr(quicksum(xe[e['name']] for e in in_edges) == zjv[(tr.traNo, *v['name'])],
-                            name=f'zjv{(tr.traNo, *v["name"])}')
+            model.addConstr(
+                quicksum(xe[e["name"]] for e in in_edges)
+                - quicksum(xe[e["name"]] for e in out_edges)
+                == 0,
+                name=f'sk_{(tr.traNo, *v["name"])}',
+            )
+            model.addConstr(
+                quicksum(xe[e["name"]] for e in in_edges)
+                == zjv[(tr.traNo, *v["name"])],
+                name=f'zjv{(tr.traNo, *v["name"])}',
+            )
 
     train_class = defaultdict(list)
     for tr in ms.train_list:
@@ -133,7 +156,9 @@ def create_milp_model(obj_type=0):
 
     # binding constraints by multiway~
     # ['aa', 'ap', 'ss', 'sp', 'pa', 'ps', 'pp']
-    for _tp, (bool_affix_ahead, bool_affix_after) in tqdm.tqdm(bool_affix_safe_int_map.items()):
+    for _tp, (bool_affix_ahead, bool_affix_after) in tqdm.tqdm(
+        bool_affix_safe_int_map.items()
+    ):
         ahead, after = _tp
         sub_safe_int = ms.safe_int[_tp]
         for (station, speed), interval in sub_safe_int.items():
@@ -143,16 +168,17 @@ def create_milp_model(obj_type=0):
             list_train_after = train_class[v_station_after, speed, after]
             if len(list_train_head) == 0 or len(list_train_after) == 0:
                 continue
-            for v in univ_nodes.select(v_station_ahead, '*'):
+            for v in univ_nodes.select(v_station_ahead, "*"):
                 _, t = v
                 ahead_expr = quicksum(zjv.select("*", v_station_ahead, t))
                 after_expr = quicksum(
-                    quicksum(zjv.select("*", v_station_after, t_after)) for _, t_after in
-                    create_neighborhood(v_station_after, t, interval))
+                    quicksum(zjv.select("*", v_station_after, t_after))
+                    for _, t_after in create_neighborhood(v_station_after, t, interval)
+                )
 
                 model.addConstr(
                     LinExpr(ahead_expr + after_expr) <= 1,
-                    f"multiway_{_tp}@{speed}@{v_station_ahead}:{v_station_after}@{t}"
+                    f"multiway_{_tp}@{speed}@{v_station_ahead}:{v_station_after}@{t}",
                 )
     if obj_type == 0:
         obj_expr = -quicksum(s_arcs.values())
@@ -165,13 +191,15 @@ def create_milp_model(obj_type=0):
             # note xe are actually different for each train: j
             g: igraph.Graph = tr.subgraph
             xe = xes[tr.traNo]
-            obj_expr += quicksum(e['weight'] * xe[e['name']] for e in g.es)
+            obj_expr += quicksum(e["weight"] * xe[e["name"]] for e in g.es)
         model.setObjective(obj_expr, sense=GRB.MAXIMIZE)
     else:
-        raise ValueError(f"unsupported obj type, currently: {util.SysParams.OBJ_DESCRIPTION.values()}")
+        raise ValueError(
+            f"unsupported obj type, currently: {util.SysParams.OBJ_DESCRIPTION.values()}"
+        )
     # maximum number of trains, by add up z
     model.setParam("LogToConsole", 1)
-    model.setParam("Threads", 1)
+    # model.setParam("Threads", 1)
 
     return model, zjv, xes, s_arcs
 
@@ -180,19 +208,28 @@ def split_model(m: Model):
     m.update()
 
     # get constrs and vars for single train
-    train_index_dict = {tr.traNo: {"vars": None, "constrs": None} for tr in ms.train_list}
+    train_index_dict = {
+        tr.traNo: {"vars": None, "constrs": None} for tr in ms.train_list
+    }
     for traNo in tqdm.tqdm(train_index_dict):
-        train_constrs = su.getConstrByPrefix(m, [f"sk_({traNo},", f"zjv({traNo},", f"start_arcs[{traNo}]"])
-        train_vars = su.getVarByPrefix(m, (f"zjv[{traNo},", f"e@{traNo}[", f"s_arcs[{traNo}]"))
+        train_constrs = su.getConstrByPrefix(
+            m, [f"sk_({traNo},", f"zjv({traNo},", f"start_arcs[{traNo}]"]
+        )
+        train_vars = su.getVarByPrefix(
+            m, (f"zjv[{traNo},", f"e@{traNo}[", f"s_arcs[{traNo}]")
+        )
         train_index_dict[traNo]["constrs"] = [constr.index for constr in train_constrs]
         train_index_dict[traNo]["vars"] = [var.index for var in train_vars]
 
         # assert all vars and constrs are in model and not removed
         assert all(ind >= 0 for ind in train_index_dict[traNo]["constrs"]) and all(
-            ind >= 0 for ind in train_index_dict[traNo]["vars"])
+            ind >= 0 for ind in train_index_dict[traNo]["vars"]
+        )
 
     # get coupling constraints
-    coupling_constr_index = [constr.index for constr in su.getConstrByPrefix(m, "multi")]
+    coupling_constr_index = [
+        constr.index for constr in su.getConstrByPrefix(m, "multi")
+    ]
 
     # sanity check for constrs
     all_constrs = coupling_constr_index.copy()
@@ -227,13 +264,15 @@ def getA_b_c(m: Model, model_index, binding_size):
             non_coupling_constr_index.append(constr.index)
 
     A = m.getA()
-    sense = np.array(m.getAttr('Sense')).reshape((m.NumConstrs, 1))
-    b = np.array(m.getAttr('RHS')).reshape((m.NumConstrs, 1))
+    sense = np.array(m.getAttr("Sense")).reshape((m.NumConstrs, 1))
+    b = np.array(m.getAttr("RHS")).reshape((m.NumConstrs, 1))
     _, n = A.shape
     # build
     B_k = A[non_coupling_constr_index, :]
     b_k = b[non_coupling_constr_index, :]
-    A_k = _initialize_csr(model_index, coupling_constr_index, A, shape=(binding_size, n))
+    A_k = _initialize_csr(
+        model_index, coupling_constr_index, A, shape=(binding_size, n)
+    )
     b = np.ones((binding_size, 1))
     sense_B_k = sense[non_coupling_constr_index, :]
     sense_A_k = sense[coupling_constr_index, :]
@@ -242,7 +281,7 @@ def getA_b_c(m: Model, model_index, binding_size):
     for i in range(obj.size()):
         c_k[obj.getVar(i).index] = obj.getCoeff(i)
 
-    return A_k, B_k, b_k, c_k, b, sense_B_k, ['<'] * binding_size
+    return A_k, B_k, b_k, c_k, b, sense_B_k, ["<"] * binding_size
 
 
 def _initialize_csr(model_index, coupling_constr_index, A, shape):
@@ -273,11 +312,13 @@ def generate_matlab_dict(model_dict, global_index, model_index, dump=False):
         return f"[{_format_dit(m)}, {_format_dit(n)}]"
 
     mat_dict = dict()
-    mat_dict['trains'] = []
-    mat_dict['b'] = 0
+    mat_dict["trains"] = []
+    mat_dict["b"] = 0
     logs = []
     for idx, traNo in enumerate(sorted(model_dict.keys())):
-        A_k, B_k, b_k, c_k, b, sense_B_k, sense_A_k = getA_b_c(model_dict[traNo], model_index[traNo], len(global_index))
+        A_k, B_k, b_k, c_k, b, sense_B_k, sense_A_k = getA_b_c(
+            model_dict[traNo], model_index[traNo], len(global_index)
+        )
         _, n = B_k.shape
         struct = {
             "A": A_k,
@@ -293,21 +334,35 @@ def generate_matlab_dict(model_dict, global_index, model_index, dump=False):
         if not dump:
             struct["train"] = ms.train_list[idx]
         #
-        mat_dict['b'] = b
-        mat_dict['trains'].append(struct)
+        mat_dict["b"] = b
+        mat_dict["trains"].append(struct)
         logs.append(
-            dict(zip(
-                ["idx", "Ak", "Bk", "bk", "ck", "#bind"],
-                [traNo, _matrix_size(A_k.shape), _matrix_size(B_k.shape), _matrix_size(b_k.shape),
-                 _matrix_size(c_k.shape), len(model_index[traNo])]
-            ))
+            dict(
+                zip(
+                    ["idx", "Ak", "Bk", "bk", "ck", "#bind"],
+                    [
+                        traNo,
+                        _matrix_size(A_k.shape),
+                        _matrix_size(B_k.shape),
+                        _matrix_size(b_k.shape),
+                        _matrix_size(c_k.shape),
+                        len(model_index[traNo]),
+                    ],
+                )
+            )
         )
     df = pd.DataFrame.from_records(logs)
     log_tables = df.to_markdown(tablefmt="grid", index=False)
-    lines = log_tables.split('\n')
+    lines = log_tables.split("\n")
     print(lines[0])
-    print(("|{:^" + f"{lines[0].__len__() - 2}" + "}|").format("multi-block model size info for railway time tabling"))
-    print(("|{:^" + f"{lines[0].__len__() - 2}" + "}|").format("showing first 10 blocks"))
+    print(
+        ("|{:^" + f"{lines[0].__len__() - 2}" + "}|").format(
+            "multi-block model size info for railway time tabling"
+        )
+    )
+    print(
+        ("|{:^" + f"{lines[0].__len__() - 2}" + "}|").format("showing first 10 blocks")
+    )
     print("\n".join(lines[0:23]))
     return mat_dict
 
@@ -323,7 +378,7 @@ def create_decomposed_models(obj_type=0):
             train_class[station, tr.speed, tp].append(tr.traNo)
 
     univ_nodes = tuplelist(
-        set(v['name'] for tr in ms.train_list for v in tr.subgraph.vs)
+        set(v["name"] for tr in ms.train_list for v in tr.subgraph.vs)
     )
 
     # query global binding constraints index info
@@ -339,7 +394,7 @@ def create_decomposed_models(obj_type=0):
             list_train_after = train_class[v_station_after, speed, after]
             if len(list_train_head) == 0 or len(list_train_after) == 0:
                 continue
-            for _, t in sorted(univ_nodes.select(v_station_ahead, '*')):
+            for _, t in sorted(univ_nodes.select(v_station_ahead, "*")):
                 global_index[_tp, station, speed, v_station_ahead, t] = idx
                 idx += 1
 
@@ -351,11 +406,15 @@ def create_decomposed_models(obj_type=0):
         # note xe are actually different for each train: j
         g = tr.subgraph
         # node name to index
-        node_to_index = {
-            n['name']: n.index for n in g.vs
-        }
+        node_to_index = {n["name"]: n.index for n in g.vs}
         # xe = model.addVars((e['name'] for e in g.es), lb=0.0, ub=1.0, vtype=GRB.BINARY, name=f'e@{tr.traNo}')
-        xe = model.addVars((e.index for e in g.es), lb=0.0, ub=1.0, vtype=GRB.BINARY, name=f'e@{tr.traNo}')
+        xe = model.addVars(
+            (e.index for e in g.es),
+            lb=0.0,
+            ub=1.0,
+            vtype=GRB.BINARY,
+            name=f"e@{tr.traNo}",
+        )
         # use index
         node_in_edges = g.get_inclist(ig.IN)
         for v in g.vs:
@@ -363,16 +422,29 @@ def create_decomposed_models(obj_type=0):
             out_edges = v.out_edges()
 
             if v.index == tr._ig_s:
-                model.addConstr(quicksum(xe[e.index] for e in out_edges) <= 1, name=f'sk_{(tr.traNo, *v["name"])}')
+                model.addConstr(
+                    quicksum(xe[e.index] for e in out_edges) <= 1,
+                    name=f'sk_{(tr.traNo, *v["name"])}',
+                )
                 continue
             if v.index == tr._ig_t:
-                model.addConstr(quicksum(xe[e.index] for e in in_edges) <= 1, name=f'sk_{(tr.traNo, *v["name"])}')
+                model.addConstr(
+                    quicksum(xe[e.index] for e in in_edges) <= 1,
+                    name=f'sk_{(tr.traNo, *v["name"])}',
+                )
                 continue
-            model.addConstr(quicksum(xe[e.index] for e in in_edges) - quicksum(xe[e.index] for e in out_edges) == 0,
-                            name=f'sk_{(tr.traNo, *v["name"])}')
+            model.addConstr(
+                quicksum(xe[e.index] for e in in_edges)
+                - quicksum(xe[e.index] for e in out_edges)
+                == 0,
+                name=f'sk_{(tr.traNo, *v["name"])}',
+            )
 
         index_array = []
-        for _tp, (bool_affix_ahead, bool_affix_after) in bool_affix_safe_int_map.items():
+        for _tp, (
+            bool_affix_ahead,
+            bool_affix_after,
+        ) in bool_affix_safe_int_map.items():
             ahead, after = _tp
             sub_safe_int = ms.safe_int[_tp]
             for (station, speed), interval in sub_safe_int.items():
@@ -383,7 +455,7 @@ def create_decomposed_models(obj_type=0):
                 if len(list_train_head) == 0 or len(list_train_after) == 0:
                     continue
                 for node in g.vs.select(station=v_station_ahead):
-                    _, t = node['name']
+                    _, t = node["name"]
 
                     # ahead_expr = quicksum(xe[e['name']] for e in node.in_edges())
                     ahead_expr = quicksum(xe.select(node_in_edges[node.index]))
@@ -394,14 +466,23 @@ def create_decomposed_models(obj_type=0):
                     # )
                     after_expr = quicksum(
                         quicksum(xe.select(node_in_edges[vv.index]))
-                        for vv in g.vs[[node_to_index[n] for n in create_neighborhood(v_station_after, t, interval) if
-                                        n in node_to_index]]
+                        for vv in g.vs[
+                            [
+                                node_to_index[n]
+                                for n in create_neighborhood(
+                                    v_station_after, t, interval
+                                )
+                                if n in node_to_index
+                            ]
+                        ]
                     )
                     model.addConstr(
                         LinExpr(ahead_expr + after_expr) <= 1,
-                        f"multiway_{_tp}@{speed}@{v_station_ahead}:{v_station_after}@{t}"
+                        f"multiway_{_tp}@{speed}@{v_station_ahead}:{v_station_after}@{t}",
                     )
-                    index_array.append(global_index[_tp, station, speed, v_station_ahead, t])
+                    index_array.append(
+                        global_index[_tp, station, speed, v_station_ahead, t]
+                    )
 
         # maximum number of trains, by add up z
         if_train_sel = quicksum(xe[e.index] for e in g.vs[tr._ig_s].out_edges())
@@ -409,9 +490,13 @@ def create_decomposed_models(obj_type=0):
             obj_expr = -if_train_sel
         elif obj_type == 1:
             # M = 1e+7
-            obj_expr = - quicksum(xe[e.index] * e['weight'] for e in g.es)  # + M * (1 - if_train_sel)
+            obj_expr = -quicksum(
+                xe[e.index] * e["weight"] for e in g.es
+            )  # + M * (1 - if_train_sel)
         else:
-            raise ValueError(f"unsupported obj type, currently: {util.SysParams.OBJ_DESCRIPTION.values()}")
+            raise ValueError(
+                f"unsupported obj type, currently: {util.SysParams.OBJ_DESCRIPTION.values()}"
+            )
 
         model.setObjective(obj_expr, sense=GRB.MINIMIZE)
         # model.setParam("LogToConsole", 1)
