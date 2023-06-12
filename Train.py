@@ -247,6 +247,7 @@ class Train(object):
         _indicator = list(
             -1 if _s == self.source else 0 for (_s, _t), v in self._ig_edges.items()
         )
+        # todo, find a proper cost
         _weight = list(11.1 for _ in self._ig_edges)
         _name = list(self._ig_edges.keys())
         self.subgraph = ig.Graph(
