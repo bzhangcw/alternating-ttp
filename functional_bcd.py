@@ -15,6 +15,7 @@ functional interface module for bcd
 """
 import copy
 import functools
+from enum import IntEnum
 from typing import Dict
 import time
 import numpy as np
@@ -29,9 +30,13 @@ import util_solver as su
 from Train import *
 
 
+class DualObjType(IntEnum):
+    ALMGP = 1
+    ALMGC = 0
+
+
 # BCD params
 class BCDParams(object):
-
     def __init__(self):
         self.kappa = 0.2
         self.alpha = 1.0
@@ -55,15 +60,20 @@ class BCDParams(object):
         self.norms = ([], [], [])
         self.multipliers = ([], [], [])
         self.itermax = 200
-        self.linmax = 1
+        self.linmax = 10
 
     def parse_environ(self):
         import os
-        self.primal_heuristic_method = os.environ.get('primal', 'jsp')
-        self.dual_method = os.environ.get('dual', 'pdhg_alm')
-        self.sspbackend = os.environ.get('sspbackend', 'grb')
-        self.dualobjtype = int(os.environ.get('dualobj', 1))
-        self.verbosity = int(os.environ.get('verbosity', 1))
+
+        self.primal_heuristic_method = os.environ.get("primal", "jsp")
+        self.dual_method = os.environ.get("dual", "pdhg_alm")
+        self.sspbackend = os.environ.get("sspbackend", "grb")
+        self.dualobjtype = DualObjType(
+            int(os.environ.get("dualobj", DualObjType.ALMGP))
+        )
+        self.verbosity = int(os.environ.get("verbosity", 1))
+        self.itermax = int(os.environ.get("iter_max", 1))
+        self.timelimit = int(os.environ.get("time_max", 200))
 
     def update_bound(self, lb):
         if lb >= self.lb:
@@ -104,10 +114,34 @@ class BCDParams(object):
         self.parse_environ()
 
     def show_log_header(self):
-        headers = ["k", "t", "f*", "c'x", "L(λ)", "aL(λ)", "|Ax - b|", "error", "ρ", "τ", "kl", "kls"]
-        slots = ["{:^3s}", "{:^7s}", "{:^9s}", "{:^9s}", "{:^9s}", "{:^9s}", "{:^10s}", "{:^10s}", "{:^9s}", "{:^9s}",
-                 "{:4s}",
-                 "{:4s}"]
+        headers = [
+            "k",
+            "t",
+            "f*",
+            "c'x",
+            "L(λ)",
+            "aL(λ)",
+            "|Ax - b|",
+            "error",
+            "ρ",
+            "τ",
+            "kl",
+            "kls",
+        ]
+        slots = [
+            "{:^3s}",
+            "{:^7s}",
+            "{:^9s}",
+            "{:^9s}",
+            "{:^9s}",
+            "{:^9s}",
+            "{:^10s}",
+            "{:^10s}",
+            "{:^9s}",
+            "{:^9s}",
+            "{:4s}",
+            "{:4s}",
+        ]
         _log_header = " ".join(slots).format(*headers)
         lt = _log_header.__len__()
         print("*" * lt)
@@ -115,14 +149,20 @@ class BCDParams(object):
         print(("{:^" + f"{lt}" + "}").format("(c) Chuwen Zhang, Shanwen Pu, Rui Wang"))
         print(("{:^" + f"{lt}" + "}").format("2022"))
         print("*" * lt)
-        print(("{:^" + f"{lt}" + "}").format(f"backend: {self.sspbackend}"))
+        print(("{:" + f"{lt}" + "}").format(f"- backend : {self.sspbackend}"))
+        print(("{:" + f"{lt}" + "}").format(f"- dual    : {self.dualobjtype.name}"))
+        print(
+            ("{:" + f"{lt}" + "}").format(
+                f"- limit   : {self.itermax}/{self.timelimit}"
+            )
+        )
         print("*" * lt)
         print(_log_header)
         print("*" * lt)
 
 
 def _Ax(block, x):
-    return block['A'] @ x
+    return block["A"] @ x
 
 
 # @np.vectorize
@@ -156,8 +196,8 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
     """
     # data
     start = time.time()
-    blocks = mat_dict['trains']
-    b = mat_dict['b']
+    blocks = mat_dict["trains"]
+    b = mat_dict["b"]
     m, _ = b.shape
     # A = scipy.sparse.hstack([blk['A'] for idx, blk in enumerate(blocks)])
     # A1 = blocks[0]['A']
@@ -172,10 +212,11 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
     sigma = 1.2
     cb = 1e6
     cx = 1e6
+    lobj = -1e6
     np.random.seed(1)
-    xb = [np.zeros((blk['n'], 1)) for idx, blk in enumerate(blocks)]
-    xk = [np.random.random((blk['n'], 1)) for idx, blk in enumerate(blocks)]
-    xv = [np.zeros((blk['n'], 1)) for idx, blk in enumerate(blocks)]
+    xb = [np.zeros((blk["n"], 1)) for idx, blk in enumerate(blocks)]
+    xk = [np.random.random((blk["n"], 1)) for idx, blk in enumerate(blocks)]
+    xv = [np.zeros((blk["n"], 1)) for idx, blk in enumerate(blocks)]
     lbd = rho * np.random.random(b.shape)
     r = Result()
     r.cx, r.cb, r.xb, r.xv, r.xk = cx, cb, xb, xv, xk
@@ -185,156 +226,271 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
     # - idx: 1-n block idx
     #       it may not be the train no
     # A_k x_k
-    _vAx = {idx: blk['A'] @ xk[idx] for idx, blk in enumerate(blocks)}
+    _vAx = {idx: blk["A"] @ xk[idx] for idx, blk in enumerate(blocks)}
     _Ax = sum(_vAx.values())
     # c_k x_k
-    _vcx = {idx: (blk['c'].T @ xk[idx]).trace() for idx, blk in enumerate(blocks)}
+    _vcx = {idx: (blk["c"].T @ xk[idx]).trace() for idx, blk in enumerate(blocks)}
     # x_k - x_k* (fixed point error)
     _eps_fix_point = {idx: 0 for idx, blk in enumerate(blocks)}
     _xnorm = {idx: 0 for idx, _ in enumerate(blocks)}
     _grad = {idx: 0 for idx, _ in enumerate(blocks)}
-    if bcdpar.sspbackend == 'grb':
+    if bcdpar.sspbackend == "grb":
         print("creating models")
         for idx, blk in enumerate(blocks):
-            train: Train = blk['train']
-            _c = blk['c']
-            blk['mx'] = train.create_shortest_path_model(blk)
+            train: Train = blk["train"]
+            _c = blk["c"]
+            blk["mx"] = train.create_shortest_path_model(blk)
         print("creating models finished")
 
     alobj = (
-            sum(_vcx.values())
-            + (lbd.T * (sum(_vAx.values()) - b)).sum()
-            + (_nonnegative(sum(_vAx.values()) - b) ** 2).sum() * rho / 2
+        sum(_vcx.values())
+        + (lbd.T * (sum(_vAx.values()) - b)).sum()
+        + (_nonnegative(sum(_vAx.values()) - b) ** 2).sum() * rho / 2
     )
 
     bcdpar.show_log_header()
     kc = 0
 
-    bst_pri_best_obj = 1e+10
     bst_pri_best_xks = None
     for k in range(bcdpar.itermax):
-        for it in range(bcdpar.linmax):
-            # linearization loop
-            # idx: A[idx]@x[idx]
-            tau = tau0
-            for idx_tau in range(2):
-                alobjz = alobj
-                # for idx, blk in tqdm.tqdm(enumerate(blocks)):
-                for idx, blk in enumerate(blocks):
-                    train_no = blk['id']
-                    train: Train = blk['train']
-                    # update gradient
-                    Ak = blk['A']
+        try:
+            # packing args
+            args = (
+                bcdpar,
+                alobj,
+                tau0,
+                rho,
+                blocks,
+                lbd,
+                xk,
+                b,
+                _eps_fix_point,
+                _xnorm,
+                _grad,
+                xv,
+                kc,
+                _vAx,
+                _vcx,
+                tsig,
+            )
 
-                    if bcdpar.dualobjtype == 1:
-                        _c = (
-                                blk['c']
-                                + Ak.T @ (lbd + rho * _nonnegative(_Ax - Ak @ xk[idx] - b / 2))
-                                + (- xk[idx] + 0.5) / tau
-                        )
-                    elif bcdpar.dualobjtype == 2:
-                        # todo, implement _c
-                        # _c = blk['c'] \
-                        #      + rho * Ak.T @ _nonnegative(_Ax - b + lbd / rho) \
-                        #      + (0.5 - xk[idx]) / tau
-                        pass
-                    else:
-                        raise ValueError(f"cannot recognize type {bcdpar.dualobjtype}")
+            ######################################################
+            # once the linearization finished,
+            # run lagrangian relaxation to find a LB
+            ######################################################
+            _lb, *_ = lagrangian_relax(bcdpar, blocks, lbd, b)
+            if _lb > lobj:
+                lobj = _lb
 
-                    # compute shortest path
-                    _x = train.vectorize_shortest_path(
-                        _c, blk=blk, backend=bcdpar.sspbackend, model_and_x=blk.get('mx')
-                    ).reshape(_c.shape)
+            ######################################################
+            # the bcd k-th iteration
+            ######################################################
+            it, idx_tau, *_ = block_coord_descent(*args)
 
-                    # Note the subproblem is not a strict shortest path problem
-                    #   you can choose not to visit any node
-                    # if it is solved by ssp, then accept if it has negative cost
-                    _v_sp = (_c.T @ _x).trace()
-                    if (_v_sp > 0) and (bcdpar.sspbackend != 'grb'): _x = np.zeros(_c.shape)
+            _iter_time = time.time() - start
+            _Ax = sum(_vAx.values())
+            _vpfeas = _nonnegative(_Ax - b)
+            eps_pfeas = np.linalg.norm(_vpfeas)
+            cx = sum(_vcx.values())
 
-                    _eps_fix_point[idx] = np.linalg.norm(xk[idx] - _x)
-                    _xnorm[idx] = np.linalg.norm(xk[idx]) ** 2
-                    _grad[idx] = np.linalg.norm(_c) ** 2
-
-                    # update this block
-                    xk[idx] = _x
-                    xv[idx] = _x if kc == 0 else _x * 1 / (kc + 1) + kc / (kc + 1) * xv[idx]
-                    _vAx[idx] = Ak @ _x
-                    _vcx[idx] = _cx = (blk['c'].T @ _x).trace()
-                _Ax = sum(_vAx.values())
-                lobj = (
-                        sum(_vcx.values())
-                        + (lbd.T * (sum(_vAx.values()) - b)).sum()
+            # lobj = cx + (_nonnegative(_Ax - b + lbd / rho) ** 2).sum() * rho / 2 - np.linalg.norm(lbd) ** 2 / 2 / rho
+            # lobj = cx + (lbd.T * (_Ax - b)).sum() + (_nonnegative(_Ax - b) ** 2).sum() * rho / 2
+            eps_fp = sum(_eps_fix_point.values())
+            ######################################################
+            # primal heuristics
+            ######################################################
+            train_list = [blk["train"] for blk in blocks]
+            for tr, opt_lr in zip(train_list, _vcx.values()):
+                tr.opt_cost_LR = opt_lr
+            pri_best_count, pri_best_obj, pri_best_xks = primal_heuristic(
+                train_list, b.copy(), blocks, target="obj"
+            )
+            print(
+                "       ⎣primal heuristic: best count: {}, best obj: {}".format(
+                    pri_best_count, pri_best_obj
                 )
-                alobj = (
-                        lobj
-                        + (_nonnegative(sum(_vAx.values()) - b) ** 2).sum() * rho / 2
-                )
+            )
+            if r.cb > pri_best_obj:
+                r.xb = pri_best_xks
+                r.cb = pri_best_obj
 
-                # do line search
-                if alobj - alobjz <= tau * sum(_eps_fix_point.values()):
-                    break
-                else:
-                    tau /= tsig
+            _log_line = "{:03d} {:.1e} {:+.2e} {:+.2e} {:+.2e} {:+.2e} {:+.3e} {:+.3e} {:+.3e} {:.2e} {:04d} {:04d}".format(
+                k,
+                _iter_time,
+                r.cb,
+                cx,
+                lobj,
+                alobj,
+                eps_pfeas,
+                eps_fp,
+                rho,
+                tau,
+                it + 1,
+                idx_tau,
+            )
+            print(_log_line)
 
-            relerr = sum(_eps_fix_point.values()) / max(1, sum(_xnorm[idx] for idx, _ in enumerate(blocks)))
-            if bcdpar.verbosity > 1:
-                print("{:01d} cx: {:.1f} al_func:{:+.2f} grad_func:{:+.2e} relerr:{:+.2f} int:{:01d}".format(
-                    it, sum(_vcx.values()), alobj, sum(_grad[idx] for idx, _ in enumerate(blocks)), relerr, idx_tau))
-
-            # fixed-point eps
-            if sum(_eps_fix_point.values()) < 1e-4:
+            if _iter_time > bcdpar.timelimit:
                 break
-        _iter_time = time.time() - start
-        _Ax = sum(_vAx.values())
-        _vpfeas = _nonnegative(_Ax - b)
-        eps_pfeas = np.linalg.norm(_vpfeas)
-        cx = sum(_vcx.values())
 
-        # lobj = cx + (_nonnegative(_Ax - b + lbd / rho) ** 2).sum() * rho / 2 - np.linalg.norm(lbd) ** 2 / 2 / rho
-        # lobj = cx + (lbd.T * (_Ax - b)).sum() + (_nonnegative(_Ax - b) ** 2).sum() * rho / 2
-        eps_fp = sum(_eps_fix_point.values())
-        _log_line = "{:03d} {:.1e} {:+.2e} {:+.2e} {:+.2e} {:+.2e} {:+.3e} {:+.3e} {:+.3e} {:.2e} {:04d} {:04d}".format(
-            k, _iter_time, r.cb, cx, lobj, alobj, eps_pfeas, eps_fp, rho, tau, it + 1, idx_tau
-        )
-        print(_log_line)
-        ######################################################
-        # primal dual restart
-        ######################################################
-        if eps_pfeas == 0:
-            print(f":restarting epoch\n:kc = {kc}")
-            if cx < r.cb:
-                r.xb = copy.deepcopy(xk)
-                r.cb = cx
-            rho = rho0
-            xk = copy.deepcopy([(1 - _xx) for _xx in xv])
-            continue
+            ######################################################
+            # primal dual restart
+            ######################################################
+            if eps_pfeas == 0:
+                print(f":restarting epoch\n:kc = {kc}")
 
-        lbd = _nonnegative((_Ax - b) * rho + lbd)
-        rho *= sigma
+                rho = rho0
+                xk = copy.deepcopy([(1 - _xx) for _xx in xv])
 
-        train_list = [blk['train'] for blk in blocks]
-        for tr, opt_lr in zip(train_list, _vcx.values()):
-            tr.opt_cost_LR = opt_lr
-        pri_best_count, pri_best_obj, pri_best_xks = primal_heuristic(train_list, b.copy(), blocks, target='obj')
-        print("primal heuristic: best count: {}, best obj: {}".format(pri_best_count, pri_best_obj))
-        if bst_pri_best_obj > pri_best_obj:
-            bst_pri_best_xks = pri_best_xks
-            bst_pri_best_obj = pri_best_obj
+                continue
 
-        bcdpar.iter += 1
-        kc += 1
-        if kc > 50:
-            kc = 0
+            lbd = _nonnegative((_Ax - b) * rho + lbd)
+            rho *= sigma
+            bcdpar.iter += 1
+            kc += 1
+            if kc > 50:
+                kc = 0
+        except KeyboardInterrupt as e:
+            print("terminated early")
+            return r, r.xb
 
-    return r, bst_pri_best_xks
+    return r, r.xb
+
+
+def block_coord_descent(*args):
+    (
+        bcdpar,
+        alobj,
+        tau0,
+        rho,
+        blocks,
+        lbd,
+        xk,
+        b,
+        _eps_fix_point,
+        _xnorm,
+        _grad,
+        xv,
+        kc,
+        _vAx,
+        _vcx,
+        tsig,
+        *_,
+    ) = args
+    # for linter only
+    idx_tau = 0
+    for it in range(bcdpar.linmax):
+        # linearization loop
+        # idx: A[idx]@x[idx]
+        tau = tau0
+        alobjz = alobj
+        for idx_tau in range(2):
+            # line search loop
+
+            for idx, blk in enumerate(blocks):
+                train_no = blk["id"]
+                train: Train = blk["train"]
+                # update gradient
+                Ak = blk["A"]
+
+                if bcdpar.dualobjtype == DualObjType.ALMGP:
+                    # bcd style ALM-GP
+                    # each time recalculate feasibility
+                    # this is not ADMM
+                    _Ax = sum(_vAx.values())
+                    _c = (
+                        blk["c"]
+                        + Ak.T @ (lbd + rho * _nonnegative(_Ax - Ak @ xk[idx] - b / 2))
+                        + (-xk[idx] + 0.5) / tau
+                    )
+                elif bcdpar.dualobjtype == 2:
+                    # todo, implement _c
+                    # _c = blk['c'] \
+                    #      + rho * Ak.T @ _nonnegative(_Ax - b + lbd / rho) \
+                    #      + (0.5 - xk[idx]) / tau
+                    pass
+                else:
+                    raise ValueError(f"cannot recognize type {bcdpar.dualobjtype}")
+
+                # compute shortest path
+                _x = train.vectorize_shortest_path(
+                    _c, blk=blk, backend=bcdpar.sspbackend, model_and_x=blk.get("mx")
+                ).reshape(_c.shape)
+
+                # Note the subproblem is not a strict shortest path problem
+                #   you can choose not to visit any node
+                # if it is solved by ssp, then accept if it has negative cost
+                _v_sp = (_c.T @ _x).trace()
+                if (_v_sp > 0) and (bcdpar.sspbackend != "grb"):
+                    _x = np.zeros(_c.shape)
+
+                _eps_fix_point[idx] = np.linalg.norm(xk[idx] - _x)
+                _xnorm[idx] = np.linalg.norm(xk[idx]) ** 2
+                _grad[idx] = np.linalg.norm(_c) ** 2
+
+                # update this block
+                xk[idx] = _x
+                xv[idx] = _x if kc == 0 else _x * 1 / (kc + 1) + kc / (kc + 1) * xv[idx]
+                _vAx[idx] = Ak @ _x
+                _vcx[idx] = _cx = (blk["c"].T @ _x).trace()
+
+            lobj = sum(_vcx.values()) + (lbd.T * (sum(_vAx.values()) - b)).sum()
+            alobj = lobj + (_nonnegative(sum(_vAx.values()) - b) ** 2).sum() * rho / 2
+
+            if bcdpar.verbosity > 1:
+                relerr = sum(_eps_fix_point.values()) / max(
+                    1, sum(_xnorm[idx] for idx, _ in enumerate(blocks))
+                )
+
+                print(
+                    "   ⎣--{:01d} cx: {:.1f} al_func:{:+.2f} grad_func:{:+.2e} relerr:{:+.2f} int:{:01d}".format(
+                        it,
+                        sum(_vcx.values()),
+                        alobj,
+                        sum(_grad[idx] for idx, _ in enumerate(blocks)),
+                        relerr,
+                        idx_tau,
+                    )
+                )
+            # do line search
+            if alobj - alobjz <= tau * sum(_eps_fix_point.values()):
+                break
+            else:
+                tau /= tsig
+
+        # fixed-point eps
+        if sum(_eps_fix_point.values()) < 1e-4:
+            break
+
+    return it, idx_tau
+
+
+def lagrangian_relax(bcdpar, blocks, lbd, b):
+    _lobj = 0
+    for idx, blk in enumerate(blocks):
+        train: Train = blk["train"]
+        # update gradient
+        Ak = blk["A"]
+        _c = blk["c"] + Ak.T @ lbd
+
+        # compute shortest path
+        _x = train.vectorize_shortest_path(
+            _c, blk=blk, backend=bcdpar.sspbackend, model_and_x=blk.get("mx")
+        ).reshape(_c.shape)
+
+        # Note the subproblem is not a strict shortest path problem
+        #   you can choose not to visit any node
+        # if it is solved by ssp, then accept if it has negative cost
+        _lobj += (_c.T @ _x).trace()
+    _lobj -= (lbd.T @ b)[0, 0]
+    return _lobj, _x
 
 
 def primal_heuristic(
-        train_list,
-        b,
-        blocks,
-        target='obj',
+    train_list,
+    b,
+    blocks,
+    target="obj",
 ):
     """
     produce path: iterable of (station, time)
@@ -347,7 +503,9 @@ def primal_heuristic(
     best_count = count = -1
     best_obj = 1e6
     train_order = sorted(
-        zip(train_list, blocks), key=lambda pair: (pair[0].standard, pair[0].opt_cost_LR), reverse=True
+        zip(train_list, blocks),
+        key=lambda pair: (pair[0].standard, pair[0].opt_cost_LR),
+        reverse=True,
     )
 
     for j in range(iter_max):
@@ -359,14 +517,14 @@ def primal_heuristic(
         xks = {}
         b_bar = b.copy()
         for idx, (train, blk) in enumerate(train_order):
-            assert train.traNo == blk['id']
+            assert train.traNo == blk["id"]
             # the heuristic only works for 1, but we may summarize using 0
             _x, optimal, b_bar = train.vectorize_heur_grb(
-                blk, b_bar, model_and_x=blk['mx']
+                blk, b_bar, model_and_x=blk["mx"]
             )
 
-            xks[blk['id']] = _x
-            train.feasible_cost = blk['c'].T @ _x
+            xks[blk["id"]] = _x
+            train.feasible_cost = blk["c"].T @ _x
             train.feasible_path = get_path_from_vec(_x, train)
             # print("Train {}: {}".format(train.traNo, train.feasible_path))
             if _x.sum() > 0.5:
@@ -387,23 +545,31 @@ def primal_heuristic(
             new_idx = inf_trs + feas_trs
             train_order = [train_order[idx] for idx in new_idx]
 
-        if (count > best_count) and (target == 'count'):
-            print("better feasible number: {}".format(count))
+        if (count > best_count) and (target == "count"):
+            print("     better feasible number: {}".format(count))
             best_count = count
             best_obj = path_cost_feasible
             best_xks = xks.copy()
-            assert best_obj == sum(blk['c'].T @ xks[blk['id']] for blk in blocks)
+            assert (
+                abs(best_obj - sum(blk["c"].T @ xks[blk["id"]] for blk in blocks))
+                < 1e-2
+            )
             if best_count == len(train_list):
-                print("all trains in the graph!")
+                print("     all trains in the graph!")
                 break
-        elif (path_cost_feasible < best_obj) and (target == 'obj'):
+        elif (path_cost_feasible < best_obj) and (target == "obj"):
             best_obj = path_cost_feasible
             best_xks = xks.copy()
-            assert best_obj == sum(blk['c'].T @ xks[blk['id']] for blk in blocks)
+            assert (
+                abs(best_obj - sum(blk["c"].T @ xks[blk["id"]] for blk in blocks))
+                < 1e-2
+            )
             best_count = count
         else:
             print(
-                "only feasible number: {}, incumbent: {}".format(count, best_count)
+                "     ⎣only feasible number: {}, incumbent: {}, best_obj: {}".format(
+                    count, best_count, best_obj
+                )
             )
 
     # print(f"seq maximum cardinality: {best_count}, obj: {best_obj}")
@@ -411,7 +577,7 @@ def primal_heuristic(
     #################################################################################
     # SUMMARIZATION
 
-    return best_count, best_obj, best_xks
+    return best_count, best_obj[0], best_xks
 
 
 def get_occupied_nodes(train):
@@ -452,10 +618,10 @@ def get_path_from_vec(x, tr):
     # the index of x is the index of the edge in the graph
     # the value of x is 1 if the edge is in the path, otherwise 0
     # the path is a list of (station, time)
-    path = [('s_', -1)]
+    path = [("s_", -1)]
     assert len(x) == len(tr.subgraph.es)
     for i, _e in enumerate(x):
         if _e > 0.5:
-            i, o = tr.subgraph.es[i]['name']  # FIXME
+            i, o = tr.subgraph.es[i]["name"]  # FIXME
             path.append(o)
     return path

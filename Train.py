@@ -182,7 +182,7 @@ class Train(object):
             raise ValueError(f"backend {self.backend} is not supported")
 
     def update_arc_multiplier(
-        self, option="lagrange", gamma=0, param_sys=None, **kwargs
+            self, option="lagrange", gamma=0, param_sys=None, **kwargs
     ):
         """
         rebuild current price/multiplier to cal shortest path
@@ -243,17 +243,18 @@ class Train(object):
         _n_nodes = self._ig_nodes.__len__()
         self._ig_nodes_id = _node_id = dict(zip(self._ig_nodes, range(_n_nodes)))
         _edges = ((_node_id[i], _node_id[j]) for (i, j), v in self._ig_edges.items())
-        _weight = list(self._ig_edges.values())
+        _dist = list(self._ig_edges.values())
         _indicator = list(
             -1 if _s == self.source else 0 for (_s, _t), v in self._ig_edges.items()
         )
+        _weight = list(11.1 for _ in self._ig_edges)
         _name = list(self._ig_edges.keys())
         self.subgraph = ig.Graph(
             directed=True,
             graph_attrs={"trainNo": self.traNo},
             n=_n_nodes,
             edges=_edges,
-            edge_attrs={"weight": _weight, "name": _name, "indicator": _indicator},
+            edge_attrs={"weight": _weight, "dist": _dist, "name": _name, "indicator": _indicator},
             vertex_attrs={"name": self._ig_nodes},
         )
         # add station and time for query
@@ -299,7 +300,7 @@ class Train(object):
             # 设置d-a的区间运行弧
             for t in range(minArr, self.right_time_bound[curSta_dep]):
                 if (
-                    t + secRunTime >= self.right_time_bound[nextSta_arr]
+                        t + secRunTime >= self.right_time_bound[nextSta_arr]
                 ):  # 范围为0 => TimeSpan - 1
                     break
                 _s, _t = (curSta_dep, t), (nextSta_arr, t + secRunTime)
@@ -317,8 +318,8 @@ class Train(object):
             if self.linePlan[nextSta] == 1:  # 该站停车，创建多个停站时间长度的停站弧
                 for t in range(minArr, self.right_time_bound[nextSta_arr]):
                     if (
-                        t + self.min_dwellTime[nextSta]
-                        >= self.right_time_bound[nextSta_dep]
+                            t + self.min_dwellTime[nextSta]
+                            >= self.right_time_bound[nextSta_dep]
                     ):  # 当前t加上最短停站时分都超了，break掉
                         break
                     my_range = range(
@@ -354,7 +355,7 @@ class Train(object):
         self.max_edge_weight = np.max(self.subgraph.es["weight"])
 
     def update_arc_multiplier_ig(
-        self, option="lagrange", gamma=0, param_sys: SysParams = None
+            self, option="lagrange", gamma=0, param_sys: SysParams = None
     ):
         """
         rebuild current price/multiplier to cal shortest path

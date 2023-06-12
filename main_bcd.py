@@ -54,7 +54,6 @@ if __name__ == '__main__':
     for k, trs in tqdm.tqdm(enumerate(mat_dict['trains'])):
         tr = trs['train']
         for e in tr.subgraph.es:
-            (r.xb[k][e.index] > 0.5) and print(e, pri_best_xks[tr.traNo][e.index])
             xes[tr.traNo][e['name']].setAttr(GRB.Attr.LB, pri_best_xks[tr.traNo][e.index])
             xes[tr.traNo][e['name']].setAttr(GRB.Attr.UB, pri_best_xks[tr.traNo][e.index])
 
