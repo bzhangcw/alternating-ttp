@@ -50,11 +50,10 @@ class BCDParams(object):
         self.lb_arr = []
         self.ub_arr = []
         self.gap = 1
+        self.primal_heur = 1
         self.dual_method = "pdhg"  # "lagrange" or "pdhg"
-        self.primal_heuristic_method = "jsp"  # "jsp" or "seq"
-        self.feasible_provider = "jsp"  # "jsp" or "seq"
         self.sspbackend = "grb"
-        self.dualobjtype = 1
+        self.dual_objtype = 1
         self.verbosity = 2
         self.max_number = 1
         self.norms = ([], [], [])
@@ -65,10 +64,9 @@ class BCDParams(object):
     def parse_environ(self):
         import os
 
-        self.primal_heuristic_method = os.environ.get("primal", "jsp")
-        self.dual_method = os.environ.get("dual", "pdhg_alm")
         self.sspbackend = os.environ.get("sspbackend", "grb")
-        self.dualobjtype = DualObjType(
+        self.primal_heur = int(os.environ.get("primalheur", 1))
+        self.dual_objtype = DualObjType(
             int(os.environ.get("dualobj", DualObjType.ALMGP))
         )
         self.verbosity = int(os.environ.get("verbosity", 1))
@@ -105,9 +103,6 @@ class BCDParams(object):
         self.lb_arr = []
         self.ub_arr = []
         self.gap = 1
-        self.dual_method = "pdhg"  # "lagrange" or "pdhg"
-        self.primal_heuristic_method = "jsp"  # "jsp" or "seq"
-        self.feasible_provider = "jsp"  # "jsp" or "seq"
         self.max_number = 1
         self.norms = ([], [], [])  # l1-norm, l2-norm, infty-norm
         self.multipliers = ([], [], [])
@@ -150,7 +145,7 @@ class BCDParams(object):
         print(("{:^" + f"{lt}" + "}").format("2022"))
         print("*" * lt)
         print(("{:" + f"{lt}" + "}").format(f"- backend : {self.sspbackend}"))
-        print(("{:" + f"{lt}" + "}").format(f"- dual    : {self.dualobjtype.name}"))
+        print(("{:" + f"{lt}" + "}").format(f"- dual    : {self.dual_objtype.name}"))
         print(
             ("{:" + f"{lt}" + "}").format(
                 f"- limit   : {self.itermax}/{self.timelimit}"
@@ -297,12 +292,10 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
             # lobj = cx + (lbd.T * (_Ax - b)).sum() + (_nonnegative(_Ax - b) ** 2).sum() * rho / 2
             eps_fp = sum(_eps_fix_point.values())
 
-
             ######################################################
             # primal heuristics
             ######################################################
-            bool_use_primal = 1
-            if bool_use_primal:
+            if bcdpar.primal_heur:
                 train_list = [blk["train"] for blk in blocks]
                 for tr, opt_lr in zip(train_list, _vcx.values()):
                     tr.opt_cost_LR = opt_lr
@@ -348,7 +341,7 @@ def optimize(bcdpar: BCDParams, mat_dict: Dict):
                     r.cb = cx
                     r.xb = {blk['train'].traNo: xk[idx] for idx, blk in enumerate(blocks)}
                 # primal restart at an acc mean
-                xk = copy.deepcopy([(1 - _xx) for _xx in xv])
+                xk = copy.deepcopy([(1 - _xx) for _xx in r.xb.values()])
                 continue
 
             lbd = _nonnegative((_Ax - b) * rho + lbd)
@@ -401,7 +394,7 @@ def block_coord_descent(*args):
                 # update gradient
                 Ak = blk["A"]
 
-                if bcdpar.dualobjtype == DualObjType.ALMGP:
+                if bcdpar.dual_objtype == DualObjType.ALMGP:
                     # bcd style ALM-GP
                     # each time recalculate feasibility
                     # this is not ADMM
@@ -411,14 +404,14 @@ def block_coord_descent(*args):
                             + Ak.T @ (lbd + rho * _nonnegative(_Ax - Ak @ xk[idx] - b / 2))
                             + (-xk[idx] + 0.5) / tau
                     )
-                elif bcdpar.dualobjtype == 2:
+                elif bcdpar.dual_objtype == 2:
                     # todo, implement _c
                     # _c = blk['c'] \
                     #      + rho * Ak.T @ _nonnegative(_Ax - b + lbd / rho) \
                     #      + (0.5 - xk[idx]) / tau
                     pass
                 else:
-                    raise ValueError(f"cannot recognize type {bcdpar.dualobjtype}")
+                    raise ValueError(f"cannot recognize type {bcdpar.dual_objtype}")
 
                 # compute shortest path
                 _x = train.vectorize_shortest_path(
